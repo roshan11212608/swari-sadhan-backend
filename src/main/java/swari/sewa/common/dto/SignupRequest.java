@@ -33,6 +33,6 @@ public class SignupRequest {
     
     private String phoneNumber;
     
-    @NotNull(message = "Role is required")
+    // Role is enforced by backend, not required from frontend
     private UserRole role;
 }

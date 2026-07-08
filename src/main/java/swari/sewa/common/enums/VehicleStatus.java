@@ -7,5 +7,6 @@ public enum VehicleStatus {
     PENDING_APPROVAL,
     REJECTED,
     SUSPENDED,
-    FLAGGED
+    FLAGGED,
+    PENDING_SALE
 }
