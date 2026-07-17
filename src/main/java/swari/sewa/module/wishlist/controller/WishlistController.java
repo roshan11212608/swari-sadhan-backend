@@ -20,7 +20,7 @@ public class WishlistController {
     private final WishlistService wishlistService;
 
     @PostMapping("/add")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name)")
     public ResponseEntity<WishlistDto> addToWishlist(
             @RequestParam Long customerId,
             @RequestParam Long vehicleId) {
@@ -29,7 +29,7 @@ public class WishlistController {
     }
 
     @DeleteMapping("/remove")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name)")
     public ResponseEntity<Void> removeFromWishlist(
             @RequestParam Long customerId,
             @RequestParam Long vehicleId) {
@@ -38,7 +38,7 @@ public class WishlistController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#id, authentication.name))")
     public ResponseEntity<WishlistDto> getWishlistById(@PathVariable Long id) {
         Optional<WishlistDto> wishlist = wishlistService.getWishlistById(id);
         return wishlist.map(ResponseEntity::ok)
@@ -46,7 +46,7 @@ public class WishlistController {
     }
 
     @GetMapping("/customer/{customerId}")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name))")
     public ResponseEntity<Page<WishlistDto>> getCustomerWishlist(
             @PathVariable Long customerId,
             @RequestParam(defaultValue = "0") int page,
@@ -56,14 +56,21 @@ public class WishlistController {
     }
 
     @GetMapping("/customer/{customerId}/all")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name))")
     public ResponseEntity<List<WishlistDto>> getCustomerWishlistAll(@PathVariable Long customerId) {
         List<WishlistDto> wishlist = wishlistService.getCustomerWishlist(customerId);
         return ResponseEntity.ok(wishlist);
     }
 
+    @GetMapping("/shop/{shopId}")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name))")
+    public ResponseEntity<List<WishlistDto>> getShopWishlist(@PathVariable Long shopId) {
+        List<WishlistDto> wishlist = wishlistService.getShopWishlist(shopId);
+        return ResponseEntity.ok(wishlist);
+    }
+
     @GetMapping("/check")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name)")
     public ResponseEntity<Boolean> isInWishlist(
             @RequestParam Long customerId,
             @RequestParam Long vehicleId) {
@@ -72,14 +79,14 @@ public class WishlistController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#id, authentication.name)) or (hasRole('SHOP_OWNER') and @shopSecurity.isWishlistOwner(#id, authentication.name))")
     public ResponseEntity<Void> deleteWishlist(@PathVariable Long id) {
         wishlistService.deleteWishlist(id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/customer/{customerId}/count")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#customerId, authentication.name))")
     public ResponseEntity<Long> getWishlistCount(@PathVariable Long customerId) {
         Long count = wishlistService.getWishlistCount(customerId);
         return ResponseEntity.ok(count);

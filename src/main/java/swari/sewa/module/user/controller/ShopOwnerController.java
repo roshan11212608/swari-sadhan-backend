@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import swari.sewa.common.dto.ApiResponse;
+import swari.sewa.common.service.FileStorageService;
 import swari.sewa.module.user.dto.ShopOwnerProfileDto;
 import swari.sewa.module.user.dto.KycSubmissionDto;
 import swari.sewa.module.user.dto.SubscriptionPlanDto;
@@ -19,6 +21,7 @@ import jakarta.validation.Valid;
 public class ShopOwnerController {
 
     private final ShopOwnerProfileService shopOwnerProfileService;
+    private final FileStorageService fileStorageService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<ShopOwnerProfileDto>> getProfile() {
@@ -72,5 +75,13 @@ public class ShopOwnerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(ApiResponse.success(shopOwnerProfileService.getCustomers(page, size)));
+    }
+
+    @PostMapping("/photo")
+    public ResponseEntity<ApiResponse<String>> uploadProfilePhoto(
+            @RequestParam("file") MultipartFile file) {
+        String fileUrl = fileStorageService.storeFile(file);
+        shopOwnerProfileService.updateProfilePhoto(fileUrl);
+        return ResponseEntity.ok(ApiResponse.success(fileUrl));
     }
 }

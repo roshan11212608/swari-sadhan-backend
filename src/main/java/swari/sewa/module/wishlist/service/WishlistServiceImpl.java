@@ -84,6 +84,14 @@ public class WishlistServiceImpl implements WishlistService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<WishlistDto> getShopWishlist(Long shopId) {
+        return wishlistRepository.findByVehicle_Shop_Id(shopId).stream()
+                .map(this::mapToDtoWithDetails)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean isInWishlist(Long customerId, Long vehicleId) {
         return wishlistRepository.existsByCustomerIdAndVehicleId(customerId, vehicleId);
     }
@@ -105,6 +113,8 @@ public class WishlistServiceImpl implements WishlistService {
         WishlistDto dto = modelMapper.map(wishlist, WishlistDto.class);
         dto.setCustomerId(wishlist.getCustomer().getId());
         dto.setCustomerName(wishlist.getCustomer().getFirstName() + " " + wishlist.getCustomer().getLastName());
+        dto.setCustomerPhone(wishlist.getCustomer().getPhone());
+        dto.setCustomerEmail(wishlist.getCustomer().getEmail());
         dto.setVehicleId(wishlist.getVehicle().getId());
         dto.setVehicleTitle(wishlist.getVehicle().getTitle());
         dto.setVehicleMainImageUrl(wishlist.getVehicle().getMainImageUrl());

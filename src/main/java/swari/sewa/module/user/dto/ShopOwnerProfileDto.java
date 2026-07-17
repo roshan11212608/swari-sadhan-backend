@@ -42,7 +42,36 @@ public class ShopOwnerProfileDto {
     private String licenseNumber;
 
     private String profilePhoto;
-    
+
+    private String shopLogo;
+
+    private String fatherName;
+    private String citizenshipNo;
+    private String citizenshipPicFront;
+    private String citizenshipPicBack;
+    private String shopType;
+    private String province;
+    private String district;
+    private String municipality;
+    private String ward;
+    private String tole;
+    private String shopPhone;
+    private String shopEmail;
+    private String pan;
+    private String regCert;
+    private String vat;
+    private String openingTime;
+    private String closingTime;
+    private String offDays;
+    private Integer vehicleLimit;
+    private Integer staffLimit;
+    private String citizenshipUpload;
+    private String shopRegUpload;
+    private String whatsappNo;
+    private String facebookPage;
+    private String googleMapLink;
+    private String notes;
+
     @Size(max = 200, message = "Address must be less than 200 characters")
     private String address;
     

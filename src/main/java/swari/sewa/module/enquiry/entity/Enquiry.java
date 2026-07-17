@@ -86,7 +86,7 @@ public class Enquiry {
     private LocalDateTime updatedAt = LocalDateTime.now();
     
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", nullable = false)
+    @JoinColumn(name = "customer_id")
     private User customer;
     
     @ManyToOne(fetch = FetchType.LAZY)

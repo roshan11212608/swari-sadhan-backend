@@ -19,6 +19,8 @@ public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
     
     List<Wishlist> findByCustomer_Id(Long customerId);
     
+    List<Wishlist> findByVehicle_Shop_Id(Long shopId);
+    
     @Query("SELECT CASE WHEN COUNT(w) > 0 THEN true ELSE false END FROM Wishlist w WHERE w.customer.id = :customerId AND w.vehicle.id = :vehicleId")
     boolean existsByCustomerIdAndVehicleId(@Param("customerId") Long customerId, @Param("vehicleId") Long vehicleId);
     

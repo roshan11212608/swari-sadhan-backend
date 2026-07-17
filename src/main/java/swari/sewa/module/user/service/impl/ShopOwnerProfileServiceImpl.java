@@ -107,6 +107,33 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
                 .companyName(shopOwner.getCompanyName())
                 .licenseNumber(shopOwner.getLicenseNumber())
                 .profilePhoto(shopOwner.getProfilePhoto())
+                .shopLogo(shopOwner.getShopLogo())
+                .fatherName(shopOwner.getFatherName())
+                .citizenshipNo(shopOwner.getCitizenshipNo())
+                .citizenshipPicFront(shopOwner.getCitizenshipPicFront())
+                .citizenshipPicBack(shopOwner.getCitizenshipPicBack())
+                .shopType(shopOwner.getShopType())
+                .province(shopOwner.getProvince())
+                .district(shopOwner.getDistrict())
+                .municipality(shopOwner.getMunicipality())
+                .ward(shopOwner.getWard())
+                .tole(shopOwner.getTole())
+                .shopPhone(shopOwner.getShopPhone())
+                .shopEmail(shopOwner.getShopEmail())
+                .pan(shopOwner.getPan())
+                .regCert(shopOwner.getRegCert())
+                .vat(shopOwner.getVat())
+                .openingTime(shopOwner.getOpeningTime())
+                .closingTime(shopOwner.getClosingTime())
+                .offDays(shopOwner.getOffDays())
+                .vehicleLimit(shopOwner.getVehicleLimit())
+                .staffLimit(shopOwner.getStaffLimit())
+                .citizenshipUpload(shopOwner.getCitizenshipUpload())
+                .shopRegUpload(shopOwner.getShopRegUpload())
+                .whatsappNo(shopOwner.getWhatsappNo())
+                .facebookPage(shopOwner.getFacebookPage())
+                .googleMapLink(shopOwner.getGoogleMapLink())
+                .notes(shopOwner.getNotes())
                 .address(shopOwner.getAddress())
                 .city(shopOwner.getCity())
                 .state(shopOwner.getState())
@@ -125,11 +152,40 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
     @Override
     public ShopOwnerProfileDto updateProfile(ShopOwnerProfileDto profileDto) {
         ShopOwner shopOwner = getCurrentShopOwner();
-        
+
         shopOwner.setFirstName(profileDto.getFirstName());
         shopOwner.setLastName(profileDto.getLastName());
         shopOwner.setPhone(profileDto.getPhone());
         shopOwner.setCompanyName(profileDto.getCompanyName());
+        shopOwner.setLicenseNumber(profileDto.getLicenseNumber());
+        shopOwner.setProfilePhoto(profileDto.getProfilePhoto());
+        shopOwner.setShopLogo(profileDto.getShopLogo());
+        shopOwner.setFatherName(profileDto.getFatherName());
+        shopOwner.setCitizenshipNo(profileDto.getCitizenshipNo());
+        shopOwner.setCitizenshipPicFront(profileDto.getCitizenshipPicFront());
+        shopOwner.setCitizenshipPicBack(profileDto.getCitizenshipPicBack());
+        shopOwner.setShopType(profileDto.getShopType());
+        shopOwner.setProvince(profileDto.getProvince());
+        shopOwner.setDistrict(profileDto.getDistrict());
+        shopOwner.setMunicipality(profileDto.getMunicipality());
+        shopOwner.setWard(profileDto.getWard());
+        shopOwner.setTole(profileDto.getTole());
+        shopOwner.setShopPhone(profileDto.getShopPhone());
+        shopOwner.setShopEmail(profileDto.getShopEmail());
+        shopOwner.setPan(profileDto.getPan());
+        shopOwner.setRegCert(profileDto.getRegCert());
+        shopOwner.setVat(profileDto.getVat());
+        shopOwner.setOpeningTime(profileDto.getOpeningTime());
+        shopOwner.setClosingTime(profileDto.getClosingTime());
+        shopOwner.setOffDays(profileDto.getOffDays());
+        shopOwner.setVehicleLimit(profileDto.getVehicleLimit());
+        shopOwner.setStaffLimit(profileDto.getStaffLimit());
+        shopOwner.setCitizenshipUpload(profileDto.getCitizenshipUpload());
+        shopOwner.setShopRegUpload(profileDto.getShopRegUpload());
+        shopOwner.setWhatsappNo(profileDto.getWhatsappNo());
+        shopOwner.setFacebookPage(profileDto.getFacebookPage());
+        shopOwner.setGoogleMapLink(profileDto.getGoogleMapLink());
+        shopOwner.setNotes(profileDto.getNotes());
         shopOwner.setAddress(profileDto.getAddress());
         shopOwner.setCity(profileDto.getCity());
         shopOwner.setState(profileDto.getState());
@@ -137,9 +193,9 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
         shopOwner.setCountry(profileDto.getCountry());
         shopOwner.setWebsite(profileDto.getWebsite());
         shopOwner.setDescription(profileDto.getDescription());
-        
+
         shopOwnerRepository.save(shopOwner);
-        
+
         return getProfile();
     }
 
@@ -268,14 +324,21 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
     @Transactional(readOnly = true)
     public Map<String, Object> getCustomers(int page, int size) {
         ShopOwner shopOwner = getCurrentShopOwner();
-        
+
         // TODO: Implement customer management logic
         Map<String, Object> result = new HashMap<>();
         result.put("customers", new Object[]{});
         result.put("totalPages", 0);
         result.put("totalElements", 0);
-        
+
         return result;
+    }
+
+    @Override
+    public void updateProfilePhoto(String photoUrl) {
+        ShopOwner shopOwner = getCurrentShopOwner();
+        shopOwner.setProfilePhoto(photoUrl);
+        shopOwnerRepository.save(shopOwner);
     }
 
     private ShopOwner getCurrentShopOwner() {

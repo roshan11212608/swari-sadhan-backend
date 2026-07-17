@@ -35,7 +35,7 @@ public class ShopController {
     }
 
     @GetMapping("/user/{userId}")
-    @PreAuthorize("hasRole('SUPER_ADMIN') or (hasRole('SHOP_OWNER') and @userSecurity.isOwner(#userId, authentication.name))")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('SHOP_OWNER') and @userSecurity.isOwner(#userId, authentication.name))")
     public ResponseEntity<ShopDto> getShopByUserId(@PathVariable Long userId) {
         Optional<ShopDto> shop = shopService.getShopByUserId(userId);
         return shop.map(ResponseEntity::ok)
@@ -73,49 +73,49 @@ public class ShopController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('SUPER_ADMIN') or (hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#id, authentication.name))")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#id, authentication.name))")
     public ResponseEntity<ShopDto> updateShop(@PathVariable Long id, @Valid @RequestBody ShopDto shopDto) {
         ShopDto updatedShop = shopService.updateShop(id, shopDto);
         return ResponseEntity.ok(updatedShop);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<Void> deleteShop(@PathVariable Long id) {
         shopService.deleteShop(id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{id}/approve")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ShopDto> approveShop(@PathVariable Long id) {
         ShopDto shop = shopService.approveShop(id);
         return ResponseEntity.ok(shop);
     }
 
     @PutMapping("/{id}/reject")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ShopDto> rejectShop(@PathVariable Long id) {
         ShopDto shop = shopService.rejectShop(id);
         return ResponseEntity.ok(shop);
     }
 
     @PutMapping("/{id}/activate")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ShopDto> activateShop(@PathVariable Long id) {
         ShopDto shop = shopService.activateShop(id);
         return ResponseEntity.ok(shop);
     }
 
     @PutMapping("/{id}/deactivate")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ShopDto> deactivateShop(@PathVariable Long id) {
         ShopDto shop = shopService.deactivateShop(id);
         return ResponseEntity.ok(shop);
     }
 
     @PutMapping("/{id}/suspend")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ShopDto> suspendShop(@PathVariable Long id) {
         ShopDto shop = shopService.suspendShop(id);
         return ResponseEntity.ok(shop);

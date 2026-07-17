@@ -19,7 +19,9 @@ import swari.sewa.module.vehicle.entity.Vehicle;
 public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     Page<Vehicle> findByShopId(Long shopId, Pageable pageable);
-    
+
+    Page<Vehicle> findByStatusNot(VehicleStatus status, Pageable pageable);
+
     Optional<Vehicle> findByIdAndShopId(Long id, Long shopId);
     
     Page<Vehicle> findByCategoryId(Long categoryId, Pageable pageable);
@@ -45,6 +47,9 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'ACTIVE' AND v.shop.status = 'ACTIVE'")
 
     Page<Vehicle> findActiveVehicles(Pageable pageable);
+
+    @Query("SELECT v FROM Vehicle v WHERE v.status = 'INACTIVE' AND v.shop.status = 'ACTIVE'")
+    Page<Vehicle> findInactiveVehicles(Pageable pageable);
     
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'ACTIVE' AND v.shop.status = 'ACTIVE' AND v.isFeatured = true")
     Page<Vehicle> findFeaturedVehicles(Pageable pageable);
@@ -82,6 +87,12 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
     Long countByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") VehicleStatus status);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId")
+    Long countByShopId(@Param("shopId") Long shopId);
+    
+    @Query("SELECT v.shop.id as shopId, COUNT(v) as count FROM Vehicle v GROUP BY v.shop.id")
+    java.util.List<java.util.Map<String, Object>> countVehiclesByShopGrouped();
     
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.status = :status")
     Long countByStatus(@Param("status") VehicleStatus status);

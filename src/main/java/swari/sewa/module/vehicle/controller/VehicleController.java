@@ -169,7 +169,7 @@ public class VehicleController {
             Long shopIdToUse = shopId;
 
             // Prevent shop owners from spoofing shop id in headers.
-            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
                 shopIdToUse = resolveCurrentShopIdOrNull();
             }
 
@@ -327,7 +327,7 @@ public class VehicleController {
     }
 
     @GetMapping("/{id}/increment-contact")
-    @PreAuthorize("hasRole('CUSTOMER') or hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('PUBLIC') or hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> incrementContactCount(@PathVariable Long id) {
         VehicleDto vehicle = vehicleService.incrementContactCount(id);
         return ResponseEntity.ok(vehicle);
@@ -346,6 +346,14 @@ public class VehicleController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         Page<VehicleDto> vehicles = vehicleService.getActiveVehicles(page, size);
+        return ResponseEntity.ok(vehicles);
+    }
+
+    @GetMapping("/inactive")
+    public ResponseEntity<Page<VehicleDto>> getInactiveVehicles(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Page<VehicleDto> vehicles = vehicleService.getInactiveVehicles(page, size);
         return ResponseEntity.ok(vehicles);
     }
 
@@ -399,11 +407,11 @@ public class VehicleController {
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> updateVehicle(@PathVariable Long id, @Valid @RequestBody VehicleDto vehicleDto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         VehicleDto updatedVehicle;
-        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
             Long shopId = resolveCurrentShopIdOrNull();
             if (shopId == null) {
                 return ResponseEntity.notFound().build();
@@ -416,7 +424,7 @@ public class VehicleController {
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> updateVehicleWithFiles(
             @PathVariable Long id,
             @RequestPart(value = "vehicle", required = false) String vehicleJson,
@@ -436,7 +444,7 @@ public class VehicleController {
             
             // Resolve shop ID
             Long shopIdToUse = shopId;
-            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
                 shopIdToUse = resolveCurrentShopIdOrNull();
             }
             
@@ -522,7 +530,7 @@ public class VehicleController {
             }
 
             VehicleDto updatedVehicle;
-            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
                 updatedVehicle = vehicleService.updateVehicleForShop(id, vehicleDto, shopIdToUse);
             } else {
                 updatedVehicle = vehicleService.updateVehicle(id, vehicleDto);
@@ -539,10 +547,10 @@ public class VehicleController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
             Long shopId = resolveCurrentShopIdOrNull();
             if (shopId == null) {
                 return ResponseEntity.notFound().build();
@@ -555,36 +563,70 @@ public class VehicleController {
     }
 
     @PutMapping("/{id}/approve")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> approveVehicle(@PathVariable Long id) {
         VehicleDto vehicle = vehicleService.approveVehicle(id);
         return ResponseEntity.ok(vehicle);
     }
 
     @PutMapping("/{id}/reject")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> rejectVehicle(@PathVariable Long id, @RequestParam String reason) {
         VehicleDto vehicle = vehicleService.rejectVehicle(id, reason);
         return ResponseEntity.ok(vehicle);
     }
 
     @PutMapping("/{id}/activate")
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> activateVehicle(@PathVariable Long id) {
         VehicleDto vehicle = vehicleService.activateVehicle(id);
         return ResponseEntity.ok(vehicle);
     }
 
     @PutMapping("/{id}/deactivate")
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<VehicleDto> deactivateVehicle(@PathVariable Long id) {
         VehicleDto vehicle = vehicleService.deactivateVehicle(id);
         return ResponseEntity.ok(vehicle);
     }
 
+    @PutMapping("/{id}/publish")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    public ResponseEntity<VehicleDto> publishVehicle(@PathVariable Long id) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        VehicleDto vehicle;
+        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
+            Long shopId = resolveCurrentShopIdOrNull();
+            if (shopId == null) {
+                return ResponseEntity.notFound().build();
+            }
+            vehicle = vehicleService.activateVehicle(id);
+        } else {
+            vehicle = vehicleService.activateVehicle(id);
+        }
+        return ResponseEntity.ok(vehicle);
+    }
+
+    @PutMapping("/{id}/unpublish")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    public ResponseEntity<VehicleDto> unpublishVehicle(@PathVariable Long id) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        VehicleDto vehicle;
+        if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
+            Long shopId = resolveCurrentShopIdOrNull();
+            if (shopId == null) {
+                return ResponseEntity.notFound().build();
+            }
+            vehicle = vehicleService.deactivateVehicle(id);
+        } else {
+            vehicle = vehicleService.deactivateVehicle(id);
+        }
+        return ResponseEntity.ok(vehicle);
+    }
+
     
     @PutMapping(value = "/{id}/mark-sold", consumes = "multipart/form-data")
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<?> markAsSold(
             @PathVariable Long id,
             @RequestPart("customerData") swari.sewa.module.vehicle.dto.SellVehicleApplicationDto customerData,
@@ -601,7 +643,7 @@ public class VehicleController {
             
             // Resolve shop ID from header or authentication
             Long shopIdToUse = shopId;
-            if (shopIdToUse == null || !hasRole(authentication, "SUPER_ADMIN")) {
+            if (shopIdToUse == null || !hasRole(authentication, "SUPERADMIN")) {
                 shopIdToUse = resolveCurrentShopIdOrNull();
                 System.out.println("Resolved shop ID from auth: " + shopIdToUse);
             }
@@ -659,14 +701,14 @@ public class VehicleController {
     }
 
     @GetMapping("/pending-approval")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<List<VehicleDto>> getPendingApprovalVehicles() {
         List<VehicleDto> vehicles = vehicleService.getPendingApprovalVehicles();
         return ResponseEntity.ok(vehicles);
     }
 
     @GetMapping("/status/{status}")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<List<VehicleDto>> getVehiclesByStatus(@PathVariable VehicleStatus status) {
         List<VehicleDto> vehicles = vehicleService.getVehiclesByStatus(status);
         return ResponseEntity.ok(vehicles);

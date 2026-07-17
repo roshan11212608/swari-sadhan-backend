@@ -19,6 +19,8 @@ public interface WishlistService {
     
     List<WishlistDto> getCustomerWishlist(Long customerId);
     
+    List<WishlistDto> getShopWishlist(Long shopId);
+    
     boolean isInWishlist(Long customerId, Long vehicleId);
     
     void deleteWishlist(Long id);

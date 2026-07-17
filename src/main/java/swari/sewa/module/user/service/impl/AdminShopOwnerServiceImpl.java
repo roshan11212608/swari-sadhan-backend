@@ -3,11 +3,14 @@ package swari.sewa.module.user.service.impl;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import swari.sewa.common.service.FileStorageService;
 
 import lombok.RequiredArgsConstructor;
 import swari.sewa.common.enums.UserRole;
@@ -27,6 +30,8 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     private final ShopRepository shopRepository;
     private final VehicleRepository vehicleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final FileStorageService fileStorageService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional(readOnly = true)
@@ -115,10 +120,49 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                 .build();
         
         ShopOwner savedShopOwner = shopOwnerRepository.save(shopOwner);
-        
+
         return convertToDto(savedShopOwner);
     }
-    
+
+    @Override
+    public ShopOwnerDto createShopOwnerWithFiles(String shopOwnerDataJson, MultipartFile profilePhoto, MultipartFile shopLogo, MultipartFile citizenshipPicFront, MultipartFile citizenshipPicBack, MultipartFile shopRegUpload) {
+        try {
+            ShopOwnerDto shopOwnerDto = objectMapper.readValue(shopOwnerDataJson, ShopOwnerDto.class);
+
+            String profilePhotoUrl = null;
+            String shopLogoUrl = null;
+            String citizenshipPicFrontUrl = null;
+            String citizenshipPicBackUrl = null;
+            String shopRegUploadUrl = null;
+
+            if (profilePhoto != null && !profilePhoto.isEmpty()) {
+                profilePhotoUrl = fileStorageService.storeFile(profilePhoto);
+            }
+            if (shopLogo != null && !shopLogo.isEmpty()) {
+                shopLogoUrl = fileStorageService.storeFile(shopLogo);
+            }
+            if (citizenshipPicFront != null && !citizenshipPicFront.isEmpty()) {
+                citizenshipPicFrontUrl = fileStorageService.storeFile(citizenshipPicFront);
+            }
+            if (citizenshipPicBack != null && !citizenshipPicBack.isEmpty()) {
+                citizenshipPicBackUrl = fileStorageService.storeFile(citizenshipPicBack);
+            }
+            if (shopRegUpload != null && !shopRegUpload.isEmpty()) {
+                shopRegUploadUrl = fileStorageService.storeFile(shopRegUpload);
+            }
+
+            shopOwnerDto.setProfilePhoto(profilePhotoUrl);
+            shopOwnerDto.setShopLogo(shopLogoUrl);
+            shopOwnerDto.setCitizenshipPicFront(citizenshipPicFrontUrl);
+            shopOwnerDto.setCitizenshipPicBack(citizenshipPicBackUrl);
+            shopOwnerDto.setShopRegUpload(shopRegUploadUrl);
+
+            return createShopOwner(shopOwnerDto);
+        } catch (Exception e) {
+            throw new RuntimeException("Error processing shop owner registration with files", e);
+        }
+    }
+
     private ShopOwnerDto convertToDto(ShopOwner shopOwner) {
         return ShopOwnerDto.builder()
                 .id(shopOwner.getId())

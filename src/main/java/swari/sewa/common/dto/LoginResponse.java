@@ -26,4 +26,8 @@ public class LoginResponse {
     private String lastName;
     
     private String role;
+    
+    private Long shopId; // For shop owners
+    
+    private String phone; // User's phone number
 }

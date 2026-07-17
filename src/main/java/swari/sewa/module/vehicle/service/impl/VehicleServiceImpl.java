@@ -133,7 +133,7 @@ public class VehicleServiceImpl implements VehicleService {
     @Transactional(readOnly = true)
     public Page<VehicleDto> getAllVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findAll(pageable)
+        return vehicleRepository.findByStatusNot(VehicleStatus.SOLD, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -166,6 +166,14 @@ public class VehicleServiceImpl implements VehicleService {
     public Page<VehicleDto> getActiveVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         return vehicleRepository.findActiveVehicles(pageable)
+                .map(this::mapToDtoWithDetails);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<VehicleDto> getInactiveVehicles(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return vehicleRepository.findInactiveVehicles(pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -337,6 +345,12 @@ public class VehicleServiceImpl implements VehicleService {
     public VehicleDto activateVehicle(Long id) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
+        
+        // Prevent re-publishing of SOLD vehicles
+        if (vehicle.getStatus() == VehicleStatus.SOLD) {
+            throw new IllegalStateException("Cannot publish a vehicle that has been sold. Vehicle ID: " + id);
+        }
+        
         vehicle.setStatus(VehicleStatus.ACTIVE);
         Vehicle updatedVehicle = vehicleRepository.save(vehicle);
         return mapToDtoWithDetails(updatedVehicle);
@@ -496,6 +510,18 @@ public class VehicleServiceImpl implements VehicleService {
         VehicleDto dto = modelMapper.map(vehicle, VehicleDto.class);
         dto.setShopId(vehicle.getShop().getId());
         dto.setShopName(vehicle.getShop().getName());
+        dto.setShopCity(vehicle.getShop().getCity());
+        dto.setShopPhone(vehicle.getShop().getPhoneNumber());
+        dto.setShopEmail(vehicle.getShop().getEmailAddress());
+        dto.setShopAddress(vehicle.getShop().getAddress());
+        // Get shop owner address details
+        if (vehicle.getShop().getShopOwner() != null) {
+            dto.setShopProvince(vehicle.getShop().getShopOwner().getProvince());
+            dto.setShopDistrict(vehicle.getShop().getShopOwner().getDistrict());
+            dto.setShopMunicipality(vehicle.getShop().getShopOwner().getMunicipality());
+            dto.setShopWard(vehicle.getShop().getShopOwner().getWard());
+            dto.setShopTole(vehicle.getShop().getShopOwner().getTole());
+        }
         dto.setCategoryId(vehicle.getCategory().getId());
         dto.setCategoryName(vehicle.getCategory().getName());
         // Explicitly set status to ensure it's included
@@ -523,6 +549,8 @@ public class VehicleServiceImpl implements VehicleService {
         dto.setOwnershipType(vehicle.getOwnershipType());
         dto.setIsFeatured(vehicle.getIsFeatured());
         dto.setRejectionReason(vehicle.getRejectionReason());
+        // Set sellPrice from price field (price is the selling price)
+        dto.setSellPrice(vehicle.getPrice());
         return dto;
     }
 }

@@ -20,12 +20,14 @@ import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.module.user.service.UserService;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
+import swari.sewa.module.shop.repository.ShopRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,6 +42,7 @@ public class AuthServiceImpl implements AuthService {
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final ShopRepository shopRepository;
 
     @Value("${jwt.refresh-expiration:604800000}")
     private long refreshExpirationMs;
@@ -51,7 +54,7 @@ public class AuthServiceImpl implements AuthService {
      * users table (planned for the user-module migration step).
      */
     private record Account(Long id, String email, String firstName, String lastName,
-                           String role, boolean active, String passwordHash) {
+                           String role, boolean active, String passwordHash, String phone) {
     }
 
     @Override
@@ -136,11 +139,11 @@ public class AuthServiceImpl implements AuthService {
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             return Optional.of(new Account(user.getId(), user.getEmail(), user.getFirstName(),
-                    user.getLastName(), user.getRole().name(), user.getActive(), user.getPassword()));
+                    user.getLastName(), user.getRole().name(), user.getActive(), user.getPassword(), user.getPhoneNumber()));
         }
         return shopOwnerRepository.findByEmail(email)
                 .map(owner -> new Account(owner.getId(), owner.getEmail(), owner.getFirstName(),
-                        owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword()));
+                        owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(), owner.getPhone()));
     }
 
     private String issueRefreshToken(String email) {
@@ -155,6 +158,23 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private LoginResponse buildLoginResponse(Account account, String accessToken, String refreshToken) {
+        Long shopId = null;
+        // If the account is a shop owner, fetch their shop ID
+        if ("SHOP_OWNER".equals(account.role())) {
+            shopId = shopOwnerRepository.findByEmail(account.email())
+                    .map(owner -> {
+                        System.out.println("Found shop owner: " + owner.getId() + ", email: " + owner.getEmail());
+                        List<swari.sewa.module.shop.entity.Shop> shops = shopRepository.findByShopOwnerId(owner.getId());
+                        System.out.println("Found shops for owner " + owner.getId() + ": " + shops.size());
+                        if (!shops.isEmpty()) {
+                            System.out.println("Shop ID: " + shops.get(0).getId());
+                        }
+                        return shops.isEmpty() ? null : shops.get(0).getId();
+                    })
+                    .orElse(null);
+            System.out.println("Final shopId for " + account.email() + ": " + shopId);
+        }
+        
         return LoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
@@ -163,6 +183,8 @@ public class AuthServiceImpl implements AuthService {
                 .firstName(account.firstName())
                 .lastName(account.lastName())
                 .role(account.role())
+                .shopId(shopId)
+                .phone(account.phone())
                 .build();
     }
 

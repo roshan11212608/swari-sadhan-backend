@@ -23,6 +23,8 @@ public interface ShopOwnerProfileService {
     Map<String, Object> getDashboardStats();
     
     Map<String, Object> getBookings(int page, int size);
-    
+
     Map<String, Object> getCustomers(int page, int size);
+
+    void updateProfilePhoto(String photoUrl);
 }

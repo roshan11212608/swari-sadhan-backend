@@ -68,7 +68,7 @@ public class SellVehicleApplicationController {
             value = "/vehicle/{vehicleId}",
             consumes = "multipart/form-data"
     )
-    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     public ResponseEntity<?> createApplication(
             @PathVariable Long vehicleId,
 
@@ -85,7 +85,7 @@ public class SellVehicleApplicationController {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             Long shopId;
 
-            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPER_ADMIN")) {
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
                 shopId = resolveCurrentShopIdOrNull();
                 if (shopId == null) {
                     return ResponseEntity.status(404).body(Map.of(

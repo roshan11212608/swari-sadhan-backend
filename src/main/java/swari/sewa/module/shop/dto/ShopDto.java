@@ -69,6 +69,23 @@ public class ShopDto {
     
     private LocalDateTime updatedAt;
     
+    // Frontend-compatible aliases and computed fields
+    private String shopName;
+    private String shopPhone;
+    private String shopEmail;
+    private String ownerName;
+    private String ownerEmail;
+    private String ownerPhone;
+    private String kycStatus;
+    private Integer vehicleCount;
+    private Integer totalVehicles;
+    private Double rating;
+    private Integer reviewCount;
+    private Integer totalReviews;
+    private String logo;
+    private String location;
+    private String ownerNameDisplay;
+    
     // Manual getter for licenseNumber
     public String getLicenseNumber() {
         return licenseNumber;

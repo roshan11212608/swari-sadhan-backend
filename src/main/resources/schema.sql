@@ -141,7 +141,7 @@ CREATE TABLE enquiries (
     expected_purchase_time VARCHAR(100),
     financing_required BOOLEAN DEFAULT FALSE,
     test_drive_requested BOOLEAN DEFAULT FALSE,
-    status ENUM('PENDING', 'CONTACTED', 'CLOSED', 'RESOLVED') DEFAULT 'PENDING',
+    status ENUM('PENDING', 'IN_PROGRESS', 'RESPONDED', 'CONTACTED', 'CLOSED', 'RESOLVED') DEFAULT 'PENDING',
     admin_notes TEXT,
     customer_id BIGINT NOT NULL,
     vehicle_id BIGINT NOT NULL,

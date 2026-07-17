@@ -21,6 +21,9 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     
     List<Shop> findByShopOwnerId(Long shopOwnerId);
     
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.shopOwner.id = :shopOwnerId")
+    List<Shop> findByShopOwnerIdWithShopOwner(@Param("shopOwnerId") Long shopOwnerId);
+    
     @Query("SELECT s FROM Shop s WHERE s.shopOwner.id = :shopOwnerId")
     Page<Shop> findByShopOwner_Id(@Param("shopOwnerId") Long shopOwnerId, Pageable pageable);
     
@@ -50,4 +53,37 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     
     @Query("SELECT s FROM Shop s WHERE s.name LIKE %:keyword% OR s.description LIKE %:keyword%")
     List<Shop> searchByKeyword(@Param("keyword") String keyword);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user")
+    List<Shop> findAllWithShopOwner();
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user")
+    org.springframework.data.domain.Page<Shop> findAllWithShopOwner(org.springframework.data.domain.Pageable pageable);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.id = :id")
+    Optional<Shop> findByIdWithShopOwner(@Param("id") Long id);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.city = :city AND s.status = 'ACTIVE'")
+    List<Shop> findByCityAndStatusActiveWithShopOwner(@Param("city") String city);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.city = :city AND s.status = 'ACTIVE'")
+    org.springframework.data.domain.Page<Shop> findByCityAndStatusActiveWithShopOwner(@Param("city") String city, org.springframework.data.domain.Pageable pageable);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.state = :state AND s.status = 'ACTIVE'")
+    List<Shop> findByStateAndStatusActiveWithShopOwner(@Param("state") String state);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.state = :state AND s.status = 'ACTIVE'")
+    org.springframework.data.domain.Page<Shop> findByStateAndStatusActiveWithShopOwner(@Param("state") String state, org.springframework.data.domain.Pageable pageable);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.isFeatured = true AND s.status = 'ACTIVE'")
+    List<Shop> findFeaturedShopsWithShopOwner();
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.isFeatured = true AND s.status = 'ACTIVE'")
+    org.springframework.data.domain.Page<Shop> findFeaturedShopsWithShopOwner(org.springframework.data.domain.Pageable pageable);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.name LIKE %:keyword% OR s.description LIKE %:keyword%")
+    List<Shop> searchByKeywordWithShopOwner(@Param("keyword") String keyword);
+    
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.name LIKE %:keyword% OR s.description LIKE %:keyword%")
+    org.springframework.data.domain.Page<Shop> searchByKeywordWithShopOwner(@Param("keyword") String keyword, org.springframework.data.domain.Pageable pageable);
 }

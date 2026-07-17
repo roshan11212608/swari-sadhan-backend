@@ -23,6 +23,10 @@ public class WishlistDto {
     
     private String customerName;
     
+    private String customerPhone;
+    
+    private String customerEmail;
+    
     private String vehicleTitle;
     
     private String vehicleMainImageUrl;

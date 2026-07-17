@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 
 import swari.sewa.module.enquiry.dto.EnquiryDto;
+import swari.sewa.module.enquiry.dto.EnquiryMessageDto;
 import swari.sewa.common.enums.EnquiryStatus;
 
 public interface EnquiryService {
@@ -41,4 +42,8 @@ public interface EnquiryService {
     List<EnquiryDto> getEnquiriesByStatus(EnquiryStatus status);
     
     Page<EnquiryDto> searchEnquiries(String keyword, int page, int size);
+    
+    List<EnquiryMessageDto> getEnquiryMessages(Long enquiryId);
+    
+    EnquiryMessageDto addEnquiryMessage(Long enquiryId, EnquiryMessageDto messageDto);
 }

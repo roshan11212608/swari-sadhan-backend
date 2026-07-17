@@ -27,7 +27,9 @@ public interface VehicleService {
     Page<VehicleDto> getVehiclesByType(VehicleType vehicleType, int page, int size);
     
     Page<VehicleDto> getActiveVehicles(int page, int size);
-    
+
+    Page<VehicleDto> getInactiveVehicles(int page, int size);
+
     Page<VehicleDto> getFeaturedVehicles(int page, int size);
     
     Page<VehicleDto> searchVehicles(VehicleSearchRequest searchRequest);

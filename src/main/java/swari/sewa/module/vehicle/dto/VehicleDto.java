@@ -55,7 +55,9 @@ public class VehicleDto {
     @NotNull(message = "Price is required")
     @Positive(message = "Price must be positive")
     private BigDecimal price;
-    
+
+    private BigDecimal sellPrice;
+
     private Boolean isNegotiable;
     
     private String condition;
@@ -101,11 +103,30 @@ public class VehicleDto {
     private LocalDate boughtDate;
     
     private Long shopId;
-    
+
     private Long categoryId;
-    
+
     private String shopName;
-    
+
+    private String shopCity;
+
+    private String shopPhone;
+
+    private String shopEmail;
+
+    private String shopAddress;
+
+    // Shop owner address details
+    private String shopProvince;
+
+    private String shopDistrict;
+
+    private String shopMunicipality;
+
+    private String shopWard;
+
+    private String shopTole;
+
     private String categoryName;
     
     // Manual getters for basic fields

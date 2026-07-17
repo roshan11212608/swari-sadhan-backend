@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import swari.sewa.common.dto.LoginRequest;
 import swari.sewa.common.dto.LoginResponse;
 import swari.sewa.common.dto.SignupRequest;
@@ -25,6 +26,19 @@ public class AuthController {
     @PostMapping("/register-shop")
     public ResponseEntity<ShopOwnerDto> registerShop(@Valid @RequestBody ShopOwnerDto shopOwnerDto) {
         ShopOwnerDto created = adminShopOwnerService.createShopOwner(shopOwnerDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/register-shop-with-files")
+    public ResponseEntity<ShopOwnerDto> registerShopWithFiles(
+            @RequestParam("shopOwnerData") String shopOwnerDataJson,
+            @RequestParam(value = "profilePhoto", required = false) MultipartFile profilePhoto,
+            @RequestParam(value = "shopLogo", required = false) MultipartFile shopLogo,
+            @RequestParam(value = "citizenshipPicFront", required = false) MultipartFile citizenshipPicFront,
+            @RequestParam(value = "citizenshipPicBack", required = false) MultipartFile citizenshipPicBack,
+            @RequestParam(value = "shopRegUpload", required = false) MultipartFile shopRegUpload) {
+        ShopOwnerDto created = adminShopOwnerService.createShopOwnerWithFiles(
+                shopOwnerDataJson, profilePhoto, shopLogo, citizenshipPicFront, citizenshipPicBack, shopRegUpload);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 

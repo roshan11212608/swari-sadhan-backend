@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -20,6 +22,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
 
@@ -31,6 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String userEmail;
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            log.warn("JWT Filter - No Authorization header or not Bearer for path: {}", request.getRequestURI());
             filterChain.doFilter(request, response);
             return;
         }
@@ -39,9 +43,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             userEmail = jwtUtil.getEmailFromToken(jwt);
+            log.info("JWT Filter - Extracted email from token: {}", userEmail);
         } catch (Exception ex) {
             // Invalid token (malformed/expired/signature). Don't block the request —
             // continue the filter chain as unauthenticated so permitAll endpoints still work.
+            log.error("JWT Filter - Failed to extract email from token: {}", ex.getMessage());
             filterChain.doFilter(request, response);
             return;
         }
@@ -49,12 +55,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
-            if (jwtUtil.validateToken(jwt)) {
+            boolean valid = jwtUtil.validateToken(jwt);
+            log.info("JWT Filter - Token valid: {}, authorities: {}", valid, userDetails.getAuthorities());
+            
+            if (valid) {
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities()
                 );
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                log.info("JWT Filter - Authentication set for user: {}", userEmail);
             }
         }
 
