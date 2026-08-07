@@ -1,10 +1,10 @@
 package swari.sewa.module.vehicle.entity;
 
-import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import jakarta.persistence.*;
 import swari.sewa.common.enums.PaymentMethod;
 import swari.sewa.module.vehicle.entity.Vehicle;
 
@@ -107,4 +107,5 @@ public class SellApplication {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
 }

@@ -16,59 +16,59 @@ import swari.sewa.common.enums.ShopStatus;
 @AllArgsConstructor
 public class ShopDto {
     private Long id;
-    
+
     @NotBlank(message = "Shop name is required")
     @Size(min = 2, max = 100, message = "Shop name must be between 2 and 100 characters")
     private String name;
-    
+
     private String description;
-    
+
     @NotBlank(message = "License number is required")
     private String licenseNumber;
-    
+
     private String addressLine1;
-    
+
     private String addressLine2;
-    
+
     @NotBlank(message = "City is required")
     private String city;
-    
+
     @NotBlank(message = "State is required")
     private String state;
-    
+
     @NotBlank(message = "Country is required")
     private String country;
-    
+
     private String postalCode;
-    
+
     private String phoneNumber;
-    
+
     private String emailAddress;
-    
+
     private String websiteUrl;
-    
+
     private Double latitude;
-    
+
     private Double longitude;
-    
+
     private String logoUrl;
-    
+
     private String openingHours;
-    
+
     private ShopStatus status;
-    
+
     private Boolean isFeatured;
-    
+
     private String subscriptionPlan;
-    
+
     private LocalDateTime subscriptionExpiry;
-    
+
     private Long shopOwnerId;
-    
+
     private LocalDateTime createdAt;
-    
+
     private LocalDateTime updatedAt;
-    
+
     // Frontend-compatible aliases and computed fields
     private String shopName;
     private String shopPhone;
@@ -85,14 +85,4 @@ public class ShopDto {
     private String logo;
     private String location;
     private String ownerNameDisplay;
-    
-    // Manual getter for licenseNumber
-    public String getLicenseNumber() {
-        return licenseNumber;
-    }
-    
-    // Manual setter for shopOwnerId
-    public void setShopOwnerId(Long shopOwnerId) {
-        this.shopOwnerId = shopOwnerId;
-    }
 }

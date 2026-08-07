@@ -1,7 +1,5 @@
 package swari.sewa.module.shop.service.impl;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +10,7 @@ import swari.sewa.common.exception.ShopServiceException;
 import swari.sewa.module.shop.entity.Shop;
 import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.shop.repository.ShopRepository;
+import swari.sewa.module.shop.repository.ShopReviewRepository;
 import swari.sewa.module.shop.service.ShopService;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
 import swari.sewa.module.vehicle.repository.VehicleRepository;
@@ -24,13 +23,17 @@ import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 @Service
-@RequiredArgsConstructor
 @Transactional
+@RequiredArgsConstructor
 @Slf4j
 public class ShopServiceImpl implements ShopService {
 
     private final ShopRepository shopRepository;
+    private final ShopReviewRepository shopReviewRepository;
     private final ShopOwnerRepository shopOwnerRepository;
     private final VehicleRepository vehicleRepository;
     private final ModelMapper modelMapper;
@@ -127,10 +130,12 @@ public class ShopServiceImpl implements ShopService {
         dto.setVehicleCount(vehicleCount.intValue());
         dto.setTotalVehicles(vehicleCount.intValue());
 
-        // Static rating/review placeholders; replace with real aggregates when available
-        dto.setRating(4.5);
-        dto.setReviewCount(0);
-        dto.setTotalReviews(0);
+        // Real rating/review data from shop_reviews table
+        long reviewCount = shopReviewRepository.countByShopId(shop.getId());
+        double avgRating = reviewCount > 0 ? shopReviewRepository.getAverageRatingByShopId(shop.getId()) : 0.0;
+        dto.setRating(Math.round(avgRating * 10.0) / 10.0);
+        dto.setReviewCount((int) reviewCount);
+        dto.setTotalReviews((int) reviewCount);
 
         return dto;
     }
@@ -175,6 +180,17 @@ public class ShopServiceImpl implements ShopService {
     @Transactional(readOnly = true)
     public Optional<ShopDto> getShopByUserId(Long userId) {
         return shopRepository.findByShopOwnerIdWithShopOwner(userId).stream().findFirst().map(this::mapToDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ShopDto> getShopByEmail(String email) {
+        // Try user email first, then shop owner email
+        Optional<Shop> shop = shopRepository.findByUserEmail(email);
+        if (shop.isEmpty()) {
+            shop = shopRepository.findByShopOwnerEmail(email);
+        }
+        return shop.map(this::mapToDto);
     }
 
     @Override

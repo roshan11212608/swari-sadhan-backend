@@ -1,11 +1,10 @@
 package swari.sewa.module.dashboard.dto;
 
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -26,7 +25,7 @@ public class CredentialsDto {
     private Boolean isEmailVerified;
     private String verificationToken;
     private LocalDateTime emailVerifiedAt;
-    
+
     // Owner Information
     private String firstName;
     private String lastName;
@@ -36,14 +35,14 @@ public class CredentialsDto {
     private String profilePhoto;
     private String citizenshipPicFront;
     private String citizenshipPicBack;
-    
+
     // Location fields for shop owners
     private String province;
     private String district;
     private String municipality;
     private String ward;
     private String tole;
-    
+
     // Shop Details
     private String shopType;
     private String companyName;
@@ -56,14 +55,14 @@ public class CredentialsDto {
     private String openingTime;
     private String closingTime;
     private String offDays;
-    
+
     // Subscription Details
     private String subscriptionPlan;
     private String subscriptionStartDate;
     private String subscriptionExpiryDate;
     private Integer vehicleLimit;
     private Integer staffLimit;
-    
+
     // Important Data & Links
     private String citizenshipUpload;
     private String shopRegUpload;
@@ -71,7 +70,7 @@ public class CredentialsDto {
     private String facebookPage;
     private String googleMapLink;
     private String notes;
-    
+
     // Additional fields
     private String city;
     private String state;

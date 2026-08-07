@@ -22,104 +22,65 @@ public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(nullable = false, unique = true)
     private String email;
-    
+
     @Column(nullable = false)
     private String password;
-    
+
     @Column(nullable = false)
     private String firstName;
-    
+
     @Column(nullable = false)
     private String lastName;
-    
+
     @Column(name = "phone_number")
     private String phoneNumber;
-    
-    // Convenience getter for phone (alias for phoneNumber)
-    public String getPhone() {
-        return phoneNumber;
-    }
-    
-    // Convenience setter for phone (alias for phoneNumber)
-    public void setPhone(String phone) {
-        this.phoneNumber = phone;
-    }
-    
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role;
-    
+
     @Column(name = "is_active")
-    @Builder.Default
     private Boolean isActive = true;
-    
-    // Convenience getter for active (alias for isActive)
-    public boolean getActive() {
-        return isActive;
-    }
-    
-    // Convenience setter for active (alias for isActive)
-    public void setActive(boolean active) {
-        this.isActive = active;
-    }
-    
-    // Manual getters for basic fields
-    public String getFirstName() {
-        return firstName;
-    }
-    
-    public String getLastName() {
-        return lastName;
-    }
-    
-    public String getEmail() {
-        return email;
-    }
-    
-    public Long getId() {
-        return id;
-    }
-    
+
+    @Column(name = "is_email_verified")
+    private Boolean isEmailVerified = false;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private Set<Enquiry> enquiries = new HashSet<>();
+
     public boolean isActive() {
         return isActive != null && isActive;
     }
-    
+
     public boolean isEmailVerified() {
         return isEmailVerified != null && isEmailVerified;
     }
-    
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
+
+    public void setActive(boolean active) {
+        this.isActive = active;
     }
-    
-    // Manual setters for basic fields
-    public void setPassword(String password) {
-        this.password = password;
+
+    public Boolean getActive() {
+        return isActive;
     }
-    
-    public void setIsEmailVerified(boolean isEmailVerified) {
-        this.isEmailVerified = isEmailVerified;
+
+    public String getPhone() {
+        return phoneNumber;
     }
-    
-    @Column(name = "is_email_verified")
-    @Builder.Default
-    private Boolean isEmailVerified = false;
-    
-    @Column(name = "created_at")
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
-    
-    @Column(name = "updated_at")
-    @Builder.Default
-    private LocalDateTime updatedAt = LocalDateTime.now();
-    
-    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @Builder.Default
-    private Set<Enquiry> enquiries = new HashSet<>();
-    
+
+    public void setPhone(String phone) {
+        this.phoneNumber = phone;
+    }
+
     @PreUpdate
     public void preUpdate() {
         updatedAt = LocalDateTime.now();

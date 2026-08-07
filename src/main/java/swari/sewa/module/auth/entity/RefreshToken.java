@@ -3,9 +3,8 @@ package swari.sewa.module.auth.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDateTime;
 
@@ -14,8 +13,7 @@ import java.time.LocalDateTime;
         @Index(name = "idx_rt_token_hash", columnList = "token_hash", unique = true),
         @Index(name = "idx_rt_user_email", columnList = "user_email")
 })
-@Getter
-@Setter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -34,12 +32,12 @@ public class RefreshToken {
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
-    @Column(name = "revoked", nullable = false)
     @Builder.Default
+    @Column(name = "revoked", nullable = false)
     private Boolean revoked = false;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public boolean isExpired() {

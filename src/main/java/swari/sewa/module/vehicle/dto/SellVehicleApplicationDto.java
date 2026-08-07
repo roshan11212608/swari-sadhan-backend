@@ -1,16 +1,19 @@
 package swari.sewa.module.vehicle.dto;
 
-import lombok.*;
 import swari.sewa.common.enums.ApplicationStatus;
 import swari.sewa.common.enums.PaymentMethod;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class SellVehicleApplicationDto {
 
     private Long id;
@@ -23,12 +26,12 @@ public class SellVehicleApplicationDto {
 
     // Customer Information
     private String customerName;
-    private String customerParentName; // Added for parent name
+    private String customerParentName;
     private String customerPhone;
     private String customerEmail;
     private String customerAddress;
     private String customerCitizenshipNumber;
-    
+
     // Customer Photos/Documents
     private String customerPhoto;
     private String citizenshipFrontPhoto;
@@ -37,26 +40,16 @@ public class SellVehicleApplicationDto {
     // Application Details
     private LocalDateTime applicationDate;
     private BigDecimal offeredPrice;
-    private String offeredPriceInWords; // Added for price in words
+    private String offeredPriceInWords;
     private PaymentMethod paymentMethod;
-    
-    // Custom setter to handle string conversion from FormData
-    public void setPaymentMethod(Object paymentMethod) {
-        if (paymentMethod instanceof String) {
-            this.paymentMethod = PaymentMethod.valueOf(((String) paymentMethod).toUpperCase());
-        } else if (paymentMethod instanceof PaymentMethod) {
-            this.paymentMethod = (PaymentMethod) paymentMethod;
-        } else {
-            this.paymentMethod = PaymentMethod.CASH; // Default fallback
-        }
-    }
+
     private BigDecimal downPayment;
     private Boolean financingRequired;
     private String financingBank;
     private BigDecimal financingAmount;
-    
+
     // Sales Information
-    private String salesManName; // Added for sales person information
+    private String salesManName;
 
     // Additional Information
     private String customerOccupation;

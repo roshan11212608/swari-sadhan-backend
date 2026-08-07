@@ -152,6 +152,8 @@ public class AuthServiceImpl implements AuthService {
                 .tokenHash(hash(rawToken))
                 .userEmail(email)
                 .expiresAt(LocalDateTime.now().plusSeconds(refreshExpirationMs / 1000))
+                .revoked(false)
+                .createdAt(LocalDateTime.now())
                 .build();
         refreshTokenRepository.save(refreshToken);
         return rawToken;

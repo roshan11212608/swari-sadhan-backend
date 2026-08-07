@@ -1,0 +1,13 @@
+ALTER TABLE public_vehicle_listings
+  DROP COLUMN transmission_type,
+  DROP COLUMN vehicle_condition,
+  DROP COLUMN accident_history,
+  DROP COLUMN accident_details,
+  DROP COLUMN major_repairs,
+  DROP COLUMN repair_details,
+  DROP COLUMN known_issues,
+  DROP COLUMN vehicle_description,
+  DROP COLUMN reason_for_selling,
+  DROP COLUMN number_of_owners,
+  DROP COLUMN ownership_status,
+  DROP COLUMN price_includes;

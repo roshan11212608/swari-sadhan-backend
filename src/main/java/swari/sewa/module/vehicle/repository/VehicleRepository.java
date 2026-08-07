@@ -1,6 +1,8 @@
 package swari.sewa.module.vehicle.repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -101,4 +103,133 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'PENDING_APPROVAL'")
     List<Vehicle> findPendingApprovalVehicles();
+    
+    // Analytics Queries
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) BETWEEN :startDate AND :endDate)")
+    Long countByShopIdAndBoughtDateBetween(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    Long countByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
+    Long countByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    BigDecimal sumPriceByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+    
+    @Query("SELECT COALESCE(SUM(v.purchasePrice + COALESCE(v.additionalExpenses, 0)), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) BETWEEN :startDate AND :endDate)")
+    BigDecimal sumPurchasePriceByShopIdAndBoughtDateBetween(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+    
+    @Query("SELECT COALESCE(SUM(v.purchasePrice + COALESCE(v.additionalExpenses, 0)), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
+    BigDecimal sumPurchasePriceByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query("SELECT COALESCE(SUM(v.price - (COALESCE(v.purchasePrice, 0) + COALESCE(v.repairCost, 0) + COALESCE(v.additionalExpenses, 0))), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    BigDecimal sumGrossProfitByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+    
+    // Business Calculation Engine Queries
+    
+    @Query("SELECT COALESCE(SUM(COALESCE(v.purchasePrice, 0) + COALESCE(v.repairCost, 0) + COALESCE(v.additionalExpenses, 0)), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    BigDecimal sumCOGSByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) > :date) AND v.status IN :statuses")
+    Long countByShopIdAndBoughtDateAfterAndStatusIn(@Param("shopId") Long shopId, @Param("date") LocalDate date, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) BETWEEN :startDate AND :endDate) AND v.status IN :statuses")
+    Long countByShopIdAndBoughtDateBetweenAndStatusIn(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) < :date) AND v.status IN :statuses")
+    Long countByShopIdAndBoughtDateBeforeAndStatusIn(@Param("shopId") Long shopId, @Param("date") LocalDate date, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query("SELECT COALESCE(SUM(v.purchasePrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) < :date) AND v.status IN :statuses")
+    BigDecimal sumPurchasePriceByShopIdAndBoughtDateBeforeAndStatusIn(@Param("shopId") Long shopId, @Param("date") LocalDate date, @Param("statuses") List<VehicleStatus> statuses);
+    
+    @Query(value = "SELECT " +
+           "period, " +
+           "COALESCE(SUM(sales), 0) as sales, " +
+           "COALESCE(SUM(purchases), 0) as purchases " +
+           "FROM (" +
+           "  SELECT " +
+           "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as sales, " +
+           "  CASE WHEN COALESCE(v.bought_date, v.created_at) BETWEEN :startDate AND :endDate THEN COALESCE(v.purchase_price, 0) + COALESCE(v.additional_expenses, 0) ELSE 0 END as purchases " +
+           "  FROM vehicles v " +
+           "  WHERE v.shop_id = :shopId " +
+           "  AND (:isYearly = false OR YEAR(v.sold_at) = YEAR(:startDate))" +
+           ") as subq " +
+           "GROUP BY period " +
+           "ORDER BY CASE WHEN :isYearly = true THEN period ELSE " +
+           "CASE period WHEN 'Jan' THEN 1 WHEN 'Feb' THEN 2 WHEN 'Mar' THEN 3 WHEN 'Apr' THEN 4 " +
+           "WHEN 'May' THEN 5 WHEN 'Jun' THEN 6 WHEN 'Jul' THEN 7 WHEN 'Aug' THEN 8 " +
+           "WHEN 'Sep' THEN 9 WHEN 'Oct' THEN 10 WHEN 'Nov' THEN 11 WHEN 'Dec' THEN 12 END END", nativeQuery = true)
+    List<Object[]> getSalesPurchaseTrend(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("isYearly") Boolean isYearly);
+    
+    @Query(value = "SELECT " +
+           "period, " +
+           "COALESCE(SUM(sales), 0) as sales " +
+           "FROM (" +
+           "  SELECT " +
+           "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as sales " +
+           "  FROM vehicles v " +
+           "  WHERE v.shop_id = :shopId " +
+           "  AND (:isYearly = false OR YEAR(v.sold_at) = YEAR(:startDate))" +
+           ") as subq " +
+           "GROUP BY period " +
+           "ORDER BY CASE WHEN :isYearly = true THEN period ELSE " +
+           "CASE period WHEN 'Jan' THEN 1 WHEN 'Feb' THEN 2 WHEN 'Mar' THEN 3 WHEN 'Apr' THEN 4 " +
+           "WHEN 'May' THEN 5 WHEN 'Jun' THEN 6 WHEN 'Jul' THEN 7 WHEN 'Aug' THEN 8 " +
+           "WHEN 'Sep' THEN 9 WHEN 'Oct' THEN 10 WHEN 'Nov' THEN 11 WHEN 'Dec' THEN 12 END END", nativeQuery = true)
+    List<Object[]> getSalesTrend(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("isYearly") Boolean isYearly);
+    
+    @Query(value = "SELECT " +
+           "period, " +
+           "COALESCE(SUM(grossProfit), 0) as grossProfit, " +
+           "COALESCE(SUM(netProfit), 0) as netProfit " +
+           "FROM (" +
+           "  SELECT " +
+           "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as grossProfit, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as netProfit " +
+           "  FROM vehicles v " +
+           "  WHERE v.shop_id = :shopId " +
+           "  AND (:isYearly = false OR YEAR(v.sold_at) = YEAR(:startDate))" +
+           ") as subq " +
+           "GROUP BY period " +
+           "ORDER BY CASE WHEN :isYearly = true THEN period ELSE " +
+           "CASE period WHEN 'Jan' THEN 1 WHEN 'Feb' THEN 2 WHEN 'Mar' THEN 3 WHEN 'Apr' THEN 4 " +
+           "WHEN 'May' THEN 5 WHEN 'Jun' THEN 6 WHEN 'Jul' THEN 7 WHEN 'Aug' THEN 8 " +
+           "WHEN 'Sep' THEN 9 WHEN 'Oct' THEN 10 WHEN 'Nov' THEN 11 WHEN 'Dec' THEN 12 END END", nativeQuery = true)
+    List<Object[]> getProfitTrend(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("isYearly") Boolean isYearly);
+    
+    @Query(value = "SELECT " +
+           "period, " +
+           "COALESCE(SUM(moneyIn), 0) as moneyIn, " +
+           "COALESCE(SUM(moneyOut), 0) as moneyOut " +
+           "FROM (" +
+           "  SELECT " +
+           "  CASE WHEN :isYearly = true THEN CAST(YEAR(COALESCE(v.sold_at, v.bought_date, v.created_at)) AS CHAR) ELSE SUBSTRING(MONTHNAME(COALESCE(v.sold_at, v.bought_date, v.created_at)), 1, 3) END as period, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as moneyIn, " +
+           "  CASE WHEN COALESCE(v.bought_date, v.created_at) BETWEEN :startDate AND :endDate THEN COALESCE(v.purchase_price, 0) ELSE 0 END as moneyOut " +
+           "  FROM vehicles v " +
+           "  WHERE v.shop_id = :shopId " +
+           "  AND (:isYearly = false OR YEAR(COALESCE(v.sold_at, v.bought_date, v.created_at)) = YEAR(:startDate))" +
+           ") as subq " +
+           "GROUP BY period " +
+           "ORDER BY CASE WHEN :isYearly = true THEN period ELSE " +
+           "CASE period WHEN 'Jan' THEN 1 WHEN 'Feb' THEN 2 WHEN 'Mar' THEN 3 WHEN 'Apr' THEN 4 " +
+           "WHEN 'May' THEN 5 WHEN 'Jun' THEN 6 WHEN 'Jul' THEN 7 WHEN 'Aug' THEN 8 " +
+           "WHEN 'Sep' THEN 9 WHEN 'Oct' THEN 10 WHEN 'Nov' THEN 11 WHEN 'Dec' THEN 12 END END", nativeQuery = true)
+    List<Object[]> getCashFlowTrend(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("isYearly") Boolean isYearly);
+    
+    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
+    BigDecimal sumPriceByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") VehicleStatus status);
+    
+    @Query("SELECT COALESCE(SUM(v.purchasePrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId")
+    BigDecimal sumPurchasePriceByShopId(@Param("shopId") Long shopId);
+    
+    @Query("SELECT COALESCE(SUM(v.purchasePrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
+    BigDecimal sumPurchasePriceByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") String status);
+    
+    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
+    BigDecimal sumPriceByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
 }

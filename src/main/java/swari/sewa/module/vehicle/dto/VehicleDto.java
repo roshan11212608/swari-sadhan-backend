@@ -58,6 +58,10 @@ public class VehicleDto {
 
     private BigDecimal sellPrice;
 
+    private BigDecimal purchasePrice;
+
+    private BigDecimal additionalExpenditure;
+
     private Boolean isNegotiable;
     
     private String condition;

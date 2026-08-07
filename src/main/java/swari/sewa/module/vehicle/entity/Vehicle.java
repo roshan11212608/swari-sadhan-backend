@@ -273,6 +273,15 @@ public class Vehicle {
     @Column(name = "bought_date")
     private LocalDate boughtDate;
     
+    @Column(name = "purchase_price", precision = 12, scale = 2)
+    private BigDecimal purchasePrice;
+    
+    @Column(name = "repair_cost", precision = 12, scale = 2)
+    private BigDecimal repairCost;
+    
+    @Column(name = "additional_expenses", precision = 12, scale = 2)
+    private BigDecimal additionalExpenses;
+    
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "shop_id", nullable = false)
     private Shop shop;

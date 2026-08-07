@@ -1,7 +1,5 @@
 package swari.sewa.config;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import swari.sewa.common.enums.UserRole;
@@ -13,6 +11,9 @@ import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.shop.repository.ShopRepository;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Component
 @RequiredArgsConstructor

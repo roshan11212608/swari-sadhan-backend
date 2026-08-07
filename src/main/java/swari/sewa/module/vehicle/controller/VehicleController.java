@@ -2,6 +2,7 @@ package swari.sewa.module.vehicle.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -157,6 +158,7 @@ public class VehicleController {
 
     @PostMapping
     // @PreAuthorize("hasRole('SHOP_OWNER')")
+    @CacheEvict(value = "analyticsDashboard", allEntries = true)
     public ResponseEntity<?> createVehicle(@RequestPart(value = "vehicle", required = false) String vehicleJson,
                                           @RequestPart(value = "mediaFiles", required = false) MultipartFile[] mediaFiles,
                                           @RequestPart(value = "bluebookFiles", required = false) MultipartFile[] bluebookFiles,
@@ -408,6 +410,7 @@ public class VehicleController {
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    @CacheEvict(value = "analyticsDashboard", allEntries = true)
     public ResponseEntity<VehicleDto> updateVehicle(@PathVariable Long id, @Valid @RequestBody VehicleDto vehicleDto) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         VehicleDto updatedVehicle;
@@ -425,6 +428,7 @@ public class VehicleController {
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    @CacheEvict(value = "analyticsDashboard", allEntries = true)
     public ResponseEntity<VehicleDto> updateVehicleWithFiles(
             @PathVariable Long id,
             @RequestPart(value = "vehicle", required = false) String vehicleJson,
@@ -548,6 +552,7 @@ public class VehicleController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    @CacheEvict(value = "analyticsDashboard", allEntries = true)
     public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
@@ -627,6 +632,7 @@ public class VehicleController {
     
     @PutMapping(value = "/{id}/mark-sold", consumes = "multipart/form-data")
     @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    @CacheEvict(value = "analyticsDashboard", allEntries = true)
     public ResponseEntity<?> markAsSold(
             @PathVariable Long id,
             @RequestPart("customerData") swari.sewa.module.vehicle.dto.SellVehicleApplicationDto customerData,

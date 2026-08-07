@@ -17,6 +17,15 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     
     Optional<Shop> findByLicenseNumber(String licenseNumber);
     
+    @Query("SELECT s FROM Shop s WHERE s.user.email = :email")
+    Optional<Shop> findByUserEmail(@Param("email") String email);
+
+    @Query("SELECT s FROM Shop s WHERE s.shopOwner.email = :email")
+    Optional<Shop> findByShopOwnerEmail(@Param("email") String email);
+
+    @Query("SELECT s.id FROM Shop s WHERE s.user.email = :email")
+    Optional<Long> findShopIdByUserEmail(@Param("email") String email);
+    
     boolean existsByLicenseNumber(String licenseNumber);
     
     List<Shop> findByShopOwnerId(Long shopOwnerId);

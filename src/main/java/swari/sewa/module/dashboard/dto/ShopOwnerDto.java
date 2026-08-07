@@ -1,7 +1,6 @@
 package swari.sewa.module.dashboard.dto;
 
 import java.time.LocalDateTime;
-
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -28,7 +27,7 @@ public class ShopOwnerDto {
     private String citizenshipNo;
     private String citizenshipPicFront;
     private String citizenshipPicBack;
-    
+
     // Shop Details
     private String shopName;
     private String companyName;
@@ -47,7 +46,7 @@ public class ShopOwnerDto {
     private String openingTime;
     private String closingTime;
     private String offDays;
-    
+
     // Subscription Details
     private String plan;
     private String startDate;
@@ -56,7 +55,7 @@ public class ShopOwnerDto {
     private Integer staffLimit;
     private String[] permissions;
     private String status;
-    
+
     // Important Data
     private String citizenshipUpload;
     private String shopRegUpload;
@@ -64,8 +63,9 @@ public class ShopOwnerDto {
     private String facebookPage;
     private String googleMapLink;
     private String notes;
-    
+
     // Status
     private Boolean active;
     private LocalDateTime createdAt;
+
 }

@@ -15,6 +15,8 @@ public interface ShopService {
     Optional<ShopDto> getShopById(Long id);
     
     Optional<ShopDto> getShopByUserId(Long userId);
+
+    Optional<ShopDto> getShopByEmail(String email);
     
     List<ShopDto> getAllShops();
     

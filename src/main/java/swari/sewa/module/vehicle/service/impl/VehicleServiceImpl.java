@@ -3,11 +3,15 @@ package swari.sewa.module.vehicle.service.impl;
 import lombok.RequiredArgsConstructor;
 
 import org.modelmapper.ModelMapper;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import swari.sewa.module.vehicle.dto.VehicleDto;
 import swari.sewa.common.dto.VehicleSearchRequest;
@@ -49,6 +53,7 @@ public class VehicleServiceImpl implements VehicleService {
     private final SellVehicleApplicationRepository sellVehicleApplicationRepository;
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public VehicleDto createVehicle(VehicleDto vehicleDto, Long shopId) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found with id: " + shopId));
@@ -78,12 +83,65 @@ public class VehicleServiceImpl implements VehicleService {
             throw new RegistrationNumberAlreadyExistsException("Registration number already exists: " + vehicleDto.getRegistrationNumber());
         }
 
-        Vehicle vehicle = modelMapper.map(vehicleDto, Vehicle.class);
+        // Create Vehicle object manually to avoid ModelMapper field mapping issues
+        Vehicle vehicle = new Vehicle();
         vehicle.setShop(shop);
         vehicle.setCategory(category);
         vehicle.setStatus(VehicleStatus.INACTIVE);
         vehicle.setViewCount(0L);
         vehicle.setContactCount(0L);
+
+        // Map frontend fields to backend entity fields correctly
+        // Frontend: price = cost price, sellPrice = selling price
+        // Backend: purchasePrice = cost price, price = selling price
+        if (vehicleDto.getSellPrice() != null) {
+            vehicle.setPrice(vehicleDto.getSellPrice());
+        } else {
+            vehicle.setPrice(vehicleDto.getPrice()); // Fallback if sellPrice not provided
+        }
+        if (vehicleDto.getPrice() != null) {
+            vehicle.setPurchasePrice(vehicleDto.getPrice());
+        }
+
+        // Map other fields manually
+        vehicle.setTitle(vehicleDto.getTitle());
+        vehicle.setDescription(vehicleDto.getDescription());
+        vehicle.setBrandName(vehicleDto.getBrandName());
+        vehicle.setModelName(vehicleDto.getModelName());
+        vehicle.setManufacturingYear(vehicleDto.getManufacturingYear());
+        vehicle.setRegistrationNumber(vehicleDto.getRegistrationNumber());
+        vehicle.setLotsNumber(vehicleDto.getLotsNumber());
+        vehicle.setVehicleType(vehicleDto.getVehicleType());
+        vehicle.setFuelType(vehicleDto.getFuelType());
+        vehicle.setTransmissionType(vehicleDto.getTransmissionType());
+        vehicle.setBodyType(vehicleDto.getBodyType());
+        vehicle.setColor(vehicleDto.getColor());
+        vehicle.setKilometersDriven(vehicleDto.getKilometersDriven());
+        vehicle.setEngineCapacity(vehicleDto.getEngineCapacity());
+        vehicle.setIsNegotiable(vehicleDto.getIsNegotiable());
+        vehicle.setCondition(vehicleDto.getCondition());
+        vehicle.setOwnershipType(vehicleDto.getOwnershipType());
+        vehicle.setInsuranceValid(vehicleDto.getInsuranceValid());
+        vehicle.setLastServiceDate(vehicleDto.getLastServiceDate());
+        vehicle.setMainImageUrl(vehicleDto.getMainImageUrl());
+        vehicle.setImageUrls(vehicleDto.getImageUrls());
+        vehicle.setVideoUrl(vehicleDto.getVideoUrl());
+        vehicle.setSellerPassportPhoto(vehicleDto.getSellerPassportPhoto());
+        vehicle.setSellerCitizenshipFront(vehicleDto.getSellerCitizenshipFront());
+        vehicle.setSellerCitizenshipBack(vehicleDto.getSellerCitizenshipBack());
+        vehicle.setSpecifications(vehicleDto.getSpecifications());
+        vehicle.setFeatures(vehicleDto.getFeatures());
+        vehicle.setRejectionReason(vehicleDto.getRejectionReason());
+        vehicle.setIsFeatured(vehicleDto.getIsFeatured());
+        vehicle.setAdditionalExpenses(vehicleDto.getAdditionalExpenditure() != null ? vehicleDto.getAdditionalExpenditure() : BigDecimal.ZERO);
+
+        // Explicitly set boughtDate to ensure it's preserved for analytics
+        if (vehicleDto.getBoughtDate() != null) {
+            vehicle.setBoughtDate(vehicleDto.getBoughtDate());
+        } else {
+            // Default to current date if not provided
+            vehicle.setBoughtDate(LocalDate.now());
+        }
         
         // Explicitly set lotsNumber to ensure it's preserved
         if (vehicleDto.getLotsNumber() != null) {
@@ -212,6 +270,7 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public VehicleDto updateVehicle(Long id, VehicleDto vehicleDto) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
@@ -235,6 +294,11 @@ public class VehicleServiceImpl implements VehicleService {
             vehicle.setLotsNumber(vehicleDto.getLotsNumber());
         }
         
+        // Explicitly preserve additionalExpenses
+        if (vehicleDto.getAdditionalExpenditure() != null) {
+            vehicle.setAdditionalExpenses(vehicleDto.getAdditionalExpenditure());
+        }
+        
         // Explicitly preserve boughtDate
         if (vehicleDto.getBoughtDate() != null) {
             vehicle.setBoughtDate(vehicleDto.getBoughtDate());
@@ -260,6 +324,7 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public VehicleDto updateVehicleForShop(Long id, VehicleDto vehicleDto, Long shopId) {
         Vehicle vehicle = vehicleRepository.findByIdAndShopId(id, shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
@@ -283,6 +348,11 @@ public class VehicleServiceImpl implements VehicleService {
             vehicle.setLotsNumber(vehicleDto.getLotsNumber());
         }
         
+        // Explicitly preserve additionalExpenses
+        if (vehicleDto.getAdditionalExpenditure() != null) {
+            vehicle.setAdditionalExpenses(vehicleDto.getAdditionalExpenditure());
+        }
+        
         // Explicitly preserve boughtDate
         if (vehicleDto.getBoughtDate() != null) {
             vehicle.setBoughtDate(vehicleDto.getBoughtDate());
@@ -308,6 +378,7 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public void deleteVehicle(Long id) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
@@ -315,6 +386,7 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public void deleteVehicleForShop(Long id, Long shopId) {
         Vehicle vehicle = vehicleRepository.findByIdAndShopId(id, shopId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
@@ -366,10 +438,16 @@ public class VehicleServiceImpl implements VehicleService {
     }
 
     @Override
+    @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public VehicleDto markAsSold(Long id, SellVehicleApplicationDto customerData, Long shopId) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + id));
         vehicle.setStatus(VehicleStatus.SOLD);
+
+        // Update vehicle price to actual selling price for accurate Sales Value calculation
+        if (customerData.getOfferedPrice() != null) {
+            vehicle.setPrice(customerData.getOfferedPrice());
+        }
 
         // Use the sale date from customer data if provided, otherwise use current time
         java.time.LocalDateTime saleDate = customerData.getApplicationDate() != null
@@ -528,6 +606,8 @@ public class VehicleServiceImpl implements VehicleService {
         dto.setStatus(vehicle.getStatus());
         // Explicitly set lotsNumber to ensure it's included
         dto.setLotsNumber(vehicle.getLotsNumber());
+        // Explicitly set additionalExpenditure to ensure it's included
+        dto.setAdditionalExpenditure(vehicle.getAdditionalExpenses());
         // Explicitly set boughtDate to ensure it's included
         dto.setBoughtDate(vehicle.getBoughtDate());
         // Explicitly set imageUrls to ensure it's included
@@ -546,11 +626,16 @@ public class VehicleServiceImpl implements VehicleService {
         dto.setVideoUrl(vehicle.getVideoUrl());
         dto.setInsuranceValid(vehicle.getInsuranceValid());
         dto.setLastServiceDate(vehicle.getLastServiceDate());
+
+        // Map backend fields to frontend fields correctly
+        // Backend: purchasePrice = cost price, price = selling price
+        // Frontend: price = cost price, sellPrice = selling price
+        dto.setPrice(vehicle.getPurchasePrice()); // Frontend price = backend purchasePrice (cost price)
+        dto.setSellPrice(vehicle.getPrice()); // Frontend sellPrice = backend price (selling price)
+        dto.setPurchasePrice(vehicle.getPurchasePrice()); // Also set purchasePrice field for reference
         dto.setOwnershipType(vehicle.getOwnershipType());
         dto.setIsFeatured(vehicle.getIsFeatured());
         dto.setRejectionReason(vehicle.getRejectionReason());
-        // Set sellPrice from price field (price is the selling price)
-        dto.setSellPrice(vehicle.getPrice());
         return dto;
     }
 }
