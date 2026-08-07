@@ -342,7 +342,8 @@ public class BusinessCalculationEngineImpl implements BusinessCalculationEngine 
     @Override
     public List<ProfitTrendData> getProfitTrend(Long shopId, LocalDateTime startDate, LocalDateTime endDate, boolean isYearly) {
         List<Object[]> profitTrendData = vehicleRepository.getProfitTrend(shopId, startDate, endDate, isYearly);
-        List<Object[]> filledProfitTrendData = ChartDataUtil.fillMissingPeriods(profitTrendData, startDate, endDate, isYearly);
+        // Repository returns [period, grossProfit, netProfit]; two-value fill ensures each zero row has three columns.
+        List<Object[]> filledProfitTrendData = ChartDataUtil.fillMissingPeriodsTwoValues(profitTrendData, startDate, endDate, isYearly);
         
         List<ProfitTrendData> result = new ArrayList<>();
         for (Object[] row : filledProfitTrendData) {
@@ -385,7 +386,8 @@ public class BusinessCalculationEngineImpl implements BusinessCalculationEngine 
     @Override
     public List<CashFlowTrendData> getCashFlowTrend(Long shopId, LocalDateTime startDate, LocalDateTime endDate, boolean isYearly) {
         List<Object[]> cashFlowTrendData = vehicleRepository.getCashFlowTrend(shopId, startDate, endDate, isYearly);
-        List<Object[]> filledCashFlowTrendData = ChartDataUtil.fillMissingPeriodsThreeValues(cashFlowTrendData, startDate, endDate, isYearly);
+        // Repository returns [period, moneyIn, moneyOut]; two-value fill ensures each zero row has three columns.
+        List<Object[]> filledCashFlowTrendData = ChartDataUtil.fillMissingPeriodsTwoValues(cashFlowTrendData, startDate, endDate, isYearly);
         
         List<CashFlowTrendData> result = new ArrayList<>();
         for (Object[] row : filledCashFlowTrendData) {
