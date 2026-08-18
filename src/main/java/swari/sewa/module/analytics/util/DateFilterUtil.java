@@ -14,6 +14,18 @@ public class DateFilterUtil {
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
 
+        // Support custom month filter: "YYYY-MM" (e.g. "2025-07")
+        if (filter != null && filter.matches("^\\d{4}-\\d{2}$")) {
+            try {
+                YearMonth ym = YearMonth.parse(filter);
+                LocalDate monthStart = ym.atDay(1);
+                LocalDate monthEnd = ym.atEndOfMonth();
+                return new DateRange(monthStart.atStartOfDay(), monthEnd.atTime(LocalTime.MAX));
+            } catch (Exception e) {
+                // fall through to default
+            }
+        }
+
         switch (filter.toLowerCase()) {
             case "today":
                 return new DateRange(today.atStartOfDay(), now);

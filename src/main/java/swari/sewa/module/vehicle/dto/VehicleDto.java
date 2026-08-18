@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -50,6 +51,7 @@ public class VehicleDto {
     
     private Integer kilometersDriven;
     
+    @JsonAlias({"engineCC", "engineCc"})
     private String engineCapacity;
     
     @NotNull(message = "Price is required")

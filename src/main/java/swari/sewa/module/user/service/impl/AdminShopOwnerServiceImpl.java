@@ -1,7 +1,14 @@
 package swari.sewa.module.user.service.impl;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Page;
@@ -14,8 +21,12 @@ import swari.sewa.common.service.FileStorageService;
 
 import lombok.RequiredArgsConstructor;
 import swari.sewa.common.enums.UserRole;
+import swari.sewa.module.auth.entity.ShopRegOtp;
+import swari.sewa.module.auth.repository.ShopRegOtpRepository;
+import swari.sewa.module.auth.service.EmailService;
 import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
+import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.module.shop.repository.ShopRepository;
 import swari.sewa.module.vehicle.repository.VehicleRepository;
 import swari.sewa.module.dashboard.dto.ShopOwnerDto;
@@ -27,11 +38,14 @@ import swari.sewa.module.user.service.AdminShopOwnerService;
 public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
     private final ShopOwnerRepository shopOwnerRepository;
+    private final UserRepository userRepository;
     private final ShopRepository shopRepository;
     private final VehicleRepository vehicleRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final ObjectMapper objectMapper;
+    private final ShopRegOtpRepository shopRegOtpRepository;
+    private final EmailService emailService;
 
     @Override
     @Transactional(readOnly = true)
@@ -62,64 +76,135 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
     @Override
     public ShopOwnerDto createShopOwner(ShopOwnerDto shopOwnerDto) {
+        // Validate the OTP verification token
+        String token = shopOwnerDto.getSignupVerificationToken();
+        if (token == null || token.isBlank()) {
+            throw new RuntimeException("Verification token is required. Please verify your email and mobile first.");
+        }
+
+        String email = shopOwnerDto.getEmail().trim().toLowerCase();
+        String mobile = normalizeMobile(shopOwnerDto.getPhone());
+
+        ShopRegOtp otpRecord = shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
+                .orElseThrow(() -> new RuntimeException("No verification found. Please verify your email and mobile first."));
+
+        if (!otpRecord.isVerified() || otpRecord.getUsedAt() != null) {
+            throw new RuntimeException("Verification is invalid or already used. Please start over.");
+        }
+
+        if (otpRecord.getTokenExpiresAt() == null
+                || otpRecord.getTokenExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Verification has expired. Please request new codes.");
+        }
+
+        String tokenHash = hashSha256(token);
+        if (!tokenHash.equals(otpRecord.getVerificationTokenHash())) {
+            throw new RuntimeException("Invalid verification token. Please verify your email and mobile again.");
+        }
+
+        // Consume the token so it can't be reused
+        otpRecord.setUsedAt(LocalDateTime.now());
+        shopRegOtpRepository.save(otpRecord);
+
         // Handle owner name - split into first and last name if needed
         String firstName = shopOwnerDto.getFirstName();
         String lastName = shopOwnerDto.getLastName();
-        
+
         if (shopOwnerDto.getOwnerName() != null && !shopOwnerDto.getOwnerName().trim().isEmpty()) {
             String[] nameParts = shopOwnerDto.getOwnerName().split(" ", 2);
             firstName = nameParts[0];
             lastName = nameParts.length > 1 ? nameParts[1] : "";
         }
-        
-        // Create ShopOwner with all fields
-        ShopOwner shopOwner = ShopOwner.builder()
-                .firstName(firstName)
-                .lastName(lastName)
-                .email(shopOwnerDto.getEmail())
-                .password(passwordEncoder.encode(shopOwnerDto.getPassword()))
-                .phone(shopOwnerDto.getPhone())
-                .companyName(shopOwnerDto.getCompanyName() != null ? shopOwnerDto.getCompanyName() : shopOwnerDto.getShopName())
-                .fatherName(shopOwnerDto.getFatherName())
-                .address(shopOwnerDto.getAddress())
-                .profilePhoto(shopOwnerDto.getProfilePhoto())
-                .citizenshipNo(shopOwnerDto.getCitizenshipNo())
-                .citizenshipPicFront(shopOwnerDto.getCitizenshipPicFront())
-                .citizenshipPicBack(shopOwnerDto.getCitizenshipPicBack())
-                .shopName(shopOwnerDto.getShopName())
-                .shopType(shopOwnerDto.getShopType())
-                .province(shopOwnerDto.getProvince())
-                .district(shopOwnerDto.getDistrict())
-                .municipality(shopOwnerDto.getMunicipality())
-                .ward(shopOwnerDto.getWard())
-                .tole(shopOwnerDto.getTole())
-                .shopPhone(shopOwnerDto.getShopPhone())
-                .shopEmail(shopOwnerDto.getShopEmail())
-                .shopLogo(shopOwnerDto.getShopLogo())
-                .pan(shopOwnerDto.getPan())
-                .regCert(shopOwnerDto.getRegCert())
-                .vat(shopOwnerDto.getVat())
-                .openingTime(shopOwnerDto.getOpeningTime())
-                .closingTime(shopOwnerDto.getClosingTime())
-                .offDays(shopOwnerDto.getOffDays())
-                .subscriptionPlan(shopOwnerDto.getPlan())
-                .subscriptionStartDate(shopOwnerDto.getStartDate())
-                .subscriptionExpiryDate(shopOwnerDto.getExpiryDate())
-                .vehicleLimit(shopOwnerDto.getVehicleLimit() != null ? shopOwnerDto.getVehicleLimit() : Integer.valueOf(5))
-                .staffLimit(shopOwnerDto.getStaffLimit() != null ? shopOwnerDto.getStaffLimit() : Integer.valueOf(3))
-                .citizenshipUpload(shopOwnerDto.getCitizenshipUpload())
-                .shopRegUpload(shopOwnerDto.getShopRegUpload())
-                .whatsappNo(shopOwnerDto.getWhatsappNo())
-                .facebookPage(shopOwnerDto.getFacebookPage())
-                .googleMapLink(shopOwnerDto.getGoogleMapLink())
-                .notes(shopOwnerDto.getNotes())
-                .active(shopOwnerDto.getActive() != null ? shopOwnerDto.getActive() : true)
-                .role(UserRole.SHOP_OWNER)
-                .emailVerified(true)
-                .subscriptionActive(true)
-                .build();
-        
+
+        // Check for an existing shop_owners record with this email. Only
+        // REJECTED applications may be re-submitted; the existing row is reused
+        // so no duplicate is created. PENDING and APPROVED rows are blocked.
+        Optional<ShopOwner> existingOpt = shopOwnerRepository.findByEmail(email);
+        ShopOwner shopOwner;
+        boolean isReapplication = false;
+
+        if (existingOpt.isPresent()) {
+            ShopOwner existing = existingOpt.get();
+            String status = existing.getApprovalStatus();
+            if ("PENDING".equals(status)) {
+                throw new RuntimeException("Your application is already pending admin approval.");
+            }
+            if ("APPROVED".equals(status)) {
+                throw new RuntimeException("An account with this email already exists. Kindly login.");
+            }
+            // REJECTED → reuse the existing record
+            shopOwner = existing;
+            isReapplication = true;
+        } else {
+            shopOwner = new ShopOwner();
+        }
+
+        // Apply registration fields (shared by new and re-application paths)
+        shopOwner.setFirstName(firstName);
+        shopOwner.setLastName(lastName);
+        shopOwner.setEmail(email);
+        shopOwner.setPhone(mobile);
+        shopOwner.setCompanyName(shopOwnerDto.getCompanyName() != null ? shopOwnerDto.getCompanyName() : shopOwnerDto.getShopName());
+        shopOwner.setFatherName(shopOwnerDto.getFatherName());
+        shopOwner.setAddress(shopOwnerDto.getAddress());
+        shopOwner.setProfilePhoto(shopOwnerDto.getProfilePhoto());
+        shopOwner.setCitizenshipNo(shopOwnerDto.getCitizenshipNo());
+        shopOwner.setCitizenshipPicFront(shopOwnerDto.getCitizenshipPicFront());
+        shopOwner.setCitizenshipPicBack(shopOwnerDto.getCitizenshipPicBack());
+        shopOwner.setShopName(shopOwnerDto.getShopName());
+        shopOwner.setShopType(shopOwnerDto.getShopType());
+        shopOwner.setProvince(shopOwnerDto.getProvince());
+        shopOwner.setDistrict(shopOwnerDto.getDistrict());
+        shopOwner.setMunicipality(shopOwnerDto.getMunicipality());
+        shopOwner.setWard(shopOwnerDto.getWard());
+        shopOwner.setTole(shopOwnerDto.getTole());
+        shopOwner.setShopPhone(shopOwnerDto.getShopPhone());
+        shopOwner.setShopEmail(shopOwnerDto.getShopEmail());
+        shopOwner.setShopLogo(shopOwnerDto.getShopLogo());
+        shopOwner.setPan(shopOwnerDto.getPan());
+        shopOwner.setRegCert(shopOwnerDto.getRegCert());
+        shopOwner.setVat(shopOwnerDto.getVat());
+        shopOwner.setOpeningTime(shopOwnerDto.getOpeningTime());
+        shopOwner.setClosingTime(shopOwnerDto.getClosingTime());
+        shopOwner.setOffDays(shopOwnerDto.getOffDays());
+        shopOwner.setSubscriptionPlan(shopOwnerDto.getPlan());
+        shopOwner.setSubscriptionStartDate(shopOwnerDto.getStartDate());
+        shopOwner.setSubscriptionExpiryDate(shopOwnerDto.getExpiryDate());
+        shopOwner.setVehicleLimit(shopOwnerDto.getVehicleLimit() != null ? shopOwnerDto.getVehicleLimit() : Integer.valueOf(5));
+        shopOwner.setStaffLimit(shopOwnerDto.getStaffLimit() != null ? shopOwnerDto.getStaffLimit() : Integer.valueOf(3));
+        shopOwner.setCitizenshipUpload(shopOwnerDto.getCitizenshipUpload());
+        shopOwner.setShopRegUpload(shopOwnerDto.getShopRegUpload());
+        shopOwner.setWhatsappNo(shopOwnerDto.getWhatsappNo());
+        shopOwner.setFacebookPage(shopOwnerDto.getFacebookPage());
+        shopOwner.setGoogleMapLink(shopOwnerDto.getGoogleMapLink());
+        shopOwner.setNotes(shopOwnerDto.getNotes());
+
+        // Application state — identical for a fresh application and a re-application.
+        // Password is a random placeholder; the real temp password is generated on
+        // approval and emailed to the user.
+        shopOwner.setActive(false);
+        shopOwner.setRole(UserRole.SHOP_OWNER);
+        shopOwner.setEmailVerified(true);
+        shopOwner.setSubscriptionActive(false);
+        shopOwner.setApprovalStatus("PENDING");
+        shopOwner.setPasswordChanged(false);
+        shopOwner.setPassword(passwordEncoder.encode(generateRandomPassword(16)));
+
+        // Clear stale rejection data so the re-applied application starts clean.
+        shopOwner.setRejectionReason(null);
+        shopOwner.setApprovedAt(null);
+
         ShopOwner savedShopOwner = shopOwnerRepository.save(shopOwner);
+
+        // On re-application, deactivate the mirrored users row (if one exists
+        // from a previous approval cycle) so it cannot be used to log in until
+        // the new application is approved.
+        if (isReapplication) {
+            userRepository.findByEmail(email).ifPresent(user -> {
+                user.setActive(false);
+                userRepository.save(user);
+            });
+        }
 
         return convertToDto(savedShopOwner);
     }
@@ -208,6 +293,10 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                 .notes(shopOwner.getNotes())
                 .active(shopOwner.isActive())
                 .createdAt(shopOwner.getCreatedAt())
+                .approvalStatus(shopOwner.getApprovalStatus())
+                .passwordChanged(shopOwner.getPasswordChanged())
+                .rejectionReason(shopOwner.getRejectionReason())
+                .approvedAt(shopOwner.getApprovedAt())
                 .build();
     }
 
@@ -249,16 +338,84 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     public void approveShopOwner(Long id) {
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
+
+        if ("APPROVED".equals(shopOwner.getApprovalStatus())) {
+            throw new RuntimeException("This shop owner is already approved.");
+        }
+
+        // Generate a temporary password
+        String tempPassword = generateRandomPassword(12);
+
         shopOwner.setActive(true);
+        shopOwner.setApprovalStatus("APPROVED");
+        shopOwner.setPasswordChanged(false);
+        shopOwner.setPassword(passwordEncoder.encode(tempPassword));
+        shopOwner.setSubscriptionActive(true);
+        shopOwner.setApprovedAt(LocalDateTime.now());
         shopOwnerRepository.save(shopOwner);
+
+        // Sync the temp password and active flag into the mirrored users row
+        // (if one exists). UserDetailsServiceImpl reads users first, so without
+        // this the owner would be authenticated against the stale placeholder
+        // password from registration and login would fail with bad credentials.
+        userRepository.findByEmail(shopOwner.getEmail()).ifPresent(user -> {
+            user.setPassword(shopOwner.getPassword());
+            user.setActive(true);
+            userRepository.save(user);
+        });
+
+        // Send approval email with username + temp password
+        String subject = "Swari Sadhan - Your Shop Registration is Approved!";
+        String htmlBody = "<div style='font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px'>"
+                + "<h2 style='color:#f97316'>Swari Sadhan</h2>"
+                + "<p>Dear " + shopOwner.getFirstName() + ",</p>"
+                + "<p>Congratulations! Your shop <strong>" + shopOwner.getShopName() + "</strong> has been approved.</p>"
+                + "<p>You can now log in to your account using the credentials below:</p>"
+                + "<div style='background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0'>"
+                + "<p style='margin:4px 0'><strong>Username (Email):</strong> " + shopOwner.getEmail() + "</p>"
+                + "<p style='margin:4px 0'><strong>Temporary Password:</strong> <code style='font-size:16px;background:#fff;padding:2px 8px;border-radius:4px'>" + tempPassword + "</code></p>"
+                + "</div>"
+                + "<p style='color:#dc2626;font-weight:600'>IMPORTANT: You must change your password on first login.</p>"
+                + "<p>Click below to log in:</p>"
+                + "<a href='http://localhost:3000/login' style='display:inline-block;background:#f97316;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;margin:8px 0'>Login to Swari Sadhan</a>"
+                + "<p style='color:#6b7280;font-size:12px;margin-top:24px'>If you did not register for Swari Sadhan, please ignore this email.</p>"
+                + "</div>";
+        emailService.sendHtmlEmail(shopOwner.getEmail(), subject, htmlBody);
     }
 
     @Override
-    public void rejectShopOwner(Long id) {
+    public void rejectShopOwner(Long id, String reason) {
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
+
         shopOwner.setActive(false);
+        shopOwner.setApprovalStatus("REJECTED");
+        shopOwner.setRejectionReason(reason != null ? reason : "Your registration did not meet our requirements.");
         shopOwnerRepository.save(shopOwner);
+
+        // Sync the mirrored users row (if one exists from a previous approval)
+        // so the rejected owner cannot authenticate through it either.
+        userRepository.findByEmail(shopOwner.getEmail()).ifPresent(user -> {
+            user.setActive(false);
+            userRepository.save(user);
+        });
+
+        // Send rejection email
+        String subject = "Swari Sadhan - Shop Registration Update";
+        String rejectionText = reason != null && !reason.isBlank() ? reason
+                : "Your registration did not meet our requirements at this time.";
+        String htmlBody = "<div style='font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:20px'>"
+                + "<h2 style='color:#f97316'>Swari Sadhan</h2>"
+                + "<p>Dear " + shopOwner.getFirstName() + ",</p>"
+                + "<p>We have reviewed your shop registration for <strong>" + shopOwner.getShopName() + "</strong>.</p>"
+                + "<p>Unfortunately, your registration could not be approved at this time.</p>"
+                + "<div style='background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:16px 0'>"
+                + "<p style='margin:0'><strong>Reason:</strong> " + rejectionText + "</p>"
+                + "</div>"
+                + "<p>If you believe this is an error or would like to reapply, please contact our support team.</p>"
+                + "<p style='color:#6b7280;font-size:12px;margin-top:24px'>Swari Sadhan Team</p>"
+                + "</div>";
+        emailService.sendHtmlEmail(shopOwner.getEmail(), subject, htmlBody);
     }
 
     @Override
@@ -275,6 +432,34 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
         shopOwner.setActive(true);
         shopOwnerRepository.save(shopOwner);
+    }
+
+    @Override
+    public void changeShopOwnerPassword(Long id, String newPassword) {
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new RuntimeException("Password must be at least 8 characters.");
+        }
+        ShopOwner shopOwner = shopOwnerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Shop owner not found"));
+        String encoded = passwordEncoder.encode(newPassword);
+        shopOwner.setPassword(encoded);
+        shopOwner.setPasswordChanged(true);
+        shopOwnerRepository.save(shopOwner);
+        syncMirroredUserPassword(shopOwner.getEmail(), encoded);
+    }
+
+    /**
+     * Shop owners can also have a row in the {@code users} table, created by
+     * other flows to satisfy foreign keys. Login checks that table first, so a
+     * password change must be written to both - otherwise the old temporary
+     * password would still authenticate.
+     */
+    private void syncMirroredUserPassword(String email, String encodedPassword) {
+        if (email == null) return;
+        userRepository.findByEmail(email).ifPresent(user -> {
+            user.setPassword(encodedPassword);
+            userRepository.save(user);
+        });
     }
 
     @Override
@@ -306,5 +491,42 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                     vehicleData.put("createdAt", vehicle.getCreatedAt());
                     return vehicleData;
                 });
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String PASSWORD_CHARS =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%";
+
+    static String normalizeMobile(String raw) {
+        if (raw == null) throw new IllegalArgumentException("Mobile number is required");
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.startsWith("977")) digits = digits.substring(3);
+        // Accept 10-digit Nepal mobile numbers starting with 9 (98, 97, 96, 95, 94, 92, etc.)
+        if (digits.length() == 10 && digits.startsWith("9")) {
+            return "+977" + digits;
+        }
+        throw new IllegalArgumentException(
+                "Enter a valid Nepal mobile number (e.g. 98XXXXXXXX).");
+    }
+
+    private static String generateRandomPassword(int length) {
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(PASSWORD_CHARS.charAt(SECURE_RANDOM.nextInt(PASSWORD_CHARS.length())));
+        }
+        return sb.toString();
+    }
+
+    private static String hashSha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 }

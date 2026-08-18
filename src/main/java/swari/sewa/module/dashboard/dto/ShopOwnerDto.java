@@ -68,4 +68,10 @@ public class ShopOwnerDto {
     private Boolean active;
     private LocalDateTime createdAt;
 
+    // Approval workflow
+    private String approvalStatus;
+    private Boolean passwordChanged;
+    private String rejectionReason;
+    private LocalDateTime approvedAt;
+    private String signupVerificationToken;
 }

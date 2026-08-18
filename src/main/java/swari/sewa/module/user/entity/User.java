@@ -23,7 +23,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String email;
 
     @Column(nullable = false)
@@ -37,6 +37,9 @@ public class User {
 
     @Column(name = "phone_number")
     private String phoneNumber;
+
+    @Column(name = "customer_code", unique = true)
+    private String customerCode;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

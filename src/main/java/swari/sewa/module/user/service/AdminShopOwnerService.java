@@ -22,11 +22,13 @@ public interface AdminShopOwnerService {
 
     void approveShopOwner(Long id);
 
-    void rejectShopOwner(Long id);
+    void rejectShopOwner(Long id, String reason);
 
     void suspendShopOwner(Long id);
 
     void reactivateShopOwner(Long id);
+
+    void changeShopOwnerPassword(Long id, String newPassword);
 
     Page<Object> getShopOwnerShops(Long id, Pageable pageable);
 

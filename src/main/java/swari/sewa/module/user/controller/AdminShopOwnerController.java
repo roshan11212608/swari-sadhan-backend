@@ -61,8 +61,9 @@ public class AdminShopOwnerController {
     }
 
     @PostMapping("/{id}/reject")
-    public ResponseEntity<ApiResponse<String>> rejectShopOwner(@PathVariable Long id) {
-        adminShopOwnerService.rejectShopOwner(id);
+    public ResponseEntity<ApiResponse<String>> rejectShopOwner(@PathVariable Long id,
+                                                                @RequestParam(required = false) String reason) {
+        adminShopOwnerService.rejectShopOwner(id, reason);
         return ResponseEntity.ok(ApiResponse.success("Shop owner rejected successfully"));
     }
 

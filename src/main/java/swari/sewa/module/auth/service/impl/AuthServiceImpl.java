@@ -12,11 +12,13 @@ import swari.sewa.common.enums.UserRole;
 import swari.sewa.common.exception.InvalidCredentialsException;
 import swari.sewa.common.exception.TokenRefreshException;
 import swari.sewa.common.util.JwtUtil;
+import swari.sewa.module.auth.dto.MobileLoginRequest;
 import swari.sewa.module.auth.entity.RefreshToken;
 import swari.sewa.module.auth.repository.RefreshTokenRepository;
 import swari.sewa.module.auth.service.AuthService;
 import swari.sewa.module.user.dto.UserDto;
 import swari.sewa.module.user.entity.User;
+import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.module.user.service.UserService;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
@@ -54,7 +56,9 @@ public class AuthServiceImpl implements AuthService {
      * users table (planned for the user-module migration step).
      */
     private record Account(Long id, String email, String firstName, String lastName,
-                           String role, boolean active, String passwordHash, String phone) {
+                           String role, boolean active, String passwordHash, String phone,
+                           String customerCode, boolean mustChangePassword,
+                           String approvalStatus) {
     }
 
     @Override
@@ -78,15 +82,59 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
 
         if (!passwordEncoder.matches(loginRequest.getPassword(), account.passwordHash())) {
-            throw new InvalidCredentialsException("Invalid email or password");
+            // If the email exists in the users table but the password doesn't match,
+            // it might be a shop owner whose email also exists as a public user.
+            // Try the shop_owners table directly before failing.
+            Optional<Account> shopOwnerAccount = shopOwnerRepository.findByEmail(loginRequest.getEmail())
+                    .map(owner -> new Account(owner.getId(), owner.getEmail(), owner.getFirstName(),
+                            owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(),
+                            owner.getPhone(), null,
+                            owner.getPasswordChanged() == null || !owner.getPasswordChanged(),
+                            owner.getApprovalStatus()));
+            if (shopOwnerAccount.isPresent()
+                    && passwordEncoder.matches(loginRequest.getPassword(), shopOwnerAccount.get().passwordHash())) {
+                account = shopOwnerAccount.get();
+            } else {
+                throw new InvalidCredentialsException("Invalid email or password");
+            }
+        }
+
+        // Block login for pending/rejected shop owners
+        if ("PENDING".equals(account.approvalStatus())) {
+            throw new InvalidCredentialsException("Your registration is pending admin approval.");
+        }
+        if ("REJECTED".equals(account.approvalStatus())) {
+            throw new InvalidCredentialsException("Your registration was rejected. Please contact support.");
         }
 
         if (!account.active()) {
             throw new InvalidCredentialsException("Account is deactivated");
         }
 
-        String accessToken = jwtUtil.generateToken(account.email(), account.role());
-        String refreshToken = issueRefreshToken(account.email());
+        String subject = accountSubject(account);
+        String accessToken = jwtUtil.generateToken(subject, account.role());
+        String refreshToken = issueRefreshToken(subject);
+
+        return buildLoginResponse(account, accessToken, refreshToken);
+    }
+
+    @Override
+    public LoginResponse loginWithMobile(MobileLoginRequest request) {
+        String normalized = normalizeMobileForLogin(request.getMobileNumber());
+        Account account = findAccountByMobile(normalized)
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid mobile number or password"));
+
+        if (!passwordEncoder.matches(request.getPassword(), account.passwordHash())) {
+            throw new InvalidCredentialsException("Invalid mobile number or password");
+        }
+
+        if (!account.active()) {
+            throw new InvalidCredentialsException("Account is deactivated");
+        }
+
+        String subject = accountSubject(account);
+        String accessToken = jwtUtil.generateToken(subject, account.role());
+        String refreshToken = issueRefreshToken(subject);
 
         return buildLoginResponse(account, accessToken, refreshToken);
     }
@@ -101,7 +149,9 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Re-load the account so deactivated users cannot refresh their session.
-        Account account = findAccountByEmail(stored.getUserEmail())
+        // The stored user identifier may be an email (email users / shop owners)
+        // or a mobile number (mobile-only public users).
+        Account account = findAccountByIdentifier(stored.getUserEmail())
                 .filter(Account::active)
                 .orElseThrow(() -> new TokenRefreshException("Account is not active"));
 
@@ -109,8 +159,9 @@ public class AuthServiceImpl implements AuthService {
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
 
-        String accessToken = jwtUtil.generateToken(account.email(), account.role());
-        String newRefreshToken = issueRefreshToken(account.email());
+        String subject = accountSubject(account);
+        String accessToken = jwtUtil.generateToken(subject, account.role());
+        String newRefreshToken = issueRefreshToken(subject);
 
         return buildLoginResponse(account, accessToken, newRefreshToken);
     }
@@ -127,7 +178,21 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public boolean emailExists(String email) {
-        return userRepository.existsByEmail(email) || shopOwnerRepository.findByEmail(email).isPresent();
+        // A shop owner's application state is the source of truth. A REJECTED
+        // application is allowed to re-apply, so the email is considered
+        // available even if a mirrored users row exists from a previous
+        // approval cycle. PENDING and APPROVED remain unavailable.
+        Optional<ShopOwner> ownerOpt = shopOwnerRepository.findByEmail(email);
+        if (ownerOpt.isPresent()) {
+            String status = ownerOpt.get().getApprovalStatus();
+            if ("REJECTED".equals(status)) {
+                return false;
+            }
+            return true; // PENDING or APPROVED
+        }
+        // No shop owner record — fall back to the users table for public users
+        // and other roles.
+        return userRepository.existsByEmail(email);
     }
 
     // ---------------------------------------------------------------------
@@ -138,12 +203,79 @@ public class AuthServiceImpl implements AuthService {
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
+            // Shop owners are mirrored into the users table by other flows, but
+            // shop_owners stays the source of truth for approval state and for
+            // whether the temporary password has been replaced. Reading those
+            // from the mirror would report "nothing to do" and let an owner
+            // skip the forced password change (and skip approval gating).
+            Optional<ShopOwner> ownerRow =
+                    user.getRole() == UserRole.SHOP_OWNER
+                            ? shopOwnerRepository.findByEmail(email)
+                            : Optional.empty();
+            boolean mustChangePassword = ownerRow
+                    .map(o -> o.getPasswordChanged() == null || !o.getPasswordChanged())
+                    .orElse(false);
+            String approvalStatus = ownerRow.map(ShopOwner::getApprovalStatus)
+                    .orElse(null);
             return Optional.of(new Account(user.getId(), user.getEmail(), user.getFirstName(),
-                    user.getLastName(), user.getRole().name(), user.getActive(), user.getPassword(), user.getPhoneNumber()));
+                    user.getLastName(), user.getRole().name(), user.getActive(), user.getPassword(),
+                    user.getPhoneNumber(), user.getCustomerCode(), mustChangePassword, approvalStatus));
         }
         return shopOwnerRepository.findByEmail(email)
                 .map(owner -> new Account(owner.getId(), owner.getEmail(), owner.getFirstName(),
-                        owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(), owner.getPhone()));
+                        owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(),
+                        owner.getPhone(), null,
+                        owner.getPasswordChanged() == null || !owner.getPasswordChanged(),
+                        owner.getApprovalStatus()));
+    }
+
+    private Optional<Account> findAccountByMobile(String mobile) {
+        return userRepository.findByPhoneNumber(mobile)
+                .map(user -> {
+                    Optional<ShopOwner> ownerRow =
+                            user.getRole() == UserRole.SHOP_OWNER && user.getEmail() != null
+                                    ? shopOwnerRepository.findByEmail(user.getEmail())
+                                    : Optional.empty();
+                    boolean mustChangePassword = ownerRow
+                            .map(o -> o.getPasswordChanged() == null || !o.getPasswordChanged())
+                            .orElse(false);
+                    String approvalStatus = ownerRow.map(ShopOwner::getApprovalStatus)
+                            .orElse(null);
+                    return new Account(user.getId(), user.getEmail(), user.getFirstName(),
+                            user.getLastName(), user.getRole().name(), user.getActive(),
+                            user.getPassword(), user.getPhoneNumber(), user.getCustomerCode(),
+                            mustChangePassword, approvalStatus);
+                });
+    }
+
+    /**
+     * Look up an account by an identifier that may be either an email or a
+     * mobile number. Used by the refresh-token flow, where the stored
+     * identifier depends on how the user logged in.
+     */
+    private Optional<Account> findAccountByIdentifier(String identifier) {
+        Optional<Account> byEmail = findAccountByEmail(identifier);
+        if (byEmail.isPresent()) return byEmail;
+        return findAccountByMobile(identifier);
+    }
+
+    /**
+     * Returns the JWT/refresh-token subject for an account: the email when
+     * present, otherwise the phone number (mobile-only public users).
+     */
+    private String accountSubject(Account account) {
+        return account.email() != null ? account.email() : account.phone();
+    }
+
+    static String normalizeMobileForLogin(String raw) {
+        if (raw == null) throw new InvalidCredentialsException("Mobile number is required");
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.startsWith("977")) digits = digits.substring(3);
+        if (digits.length() == 10 && (digits.startsWith("98")
+                || digits.startsWith("97") || digits.startsWith("96"))) {
+            return "+977" + digits;
+        }
+        throw new InvalidCredentialsException("Invalid mobile number or password");
     }
 
     private String issueRefreshToken(String email) {
@@ -162,21 +294,15 @@ public class AuthServiceImpl implements AuthService {
     private LoginResponse buildLoginResponse(Account account, String accessToken, String refreshToken) {
         Long shopId = null;
         // If the account is a shop owner, fetch their shop ID
-        if ("SHOP_OWNER".equals(account.role())) {
+        if ("SHOP_OWNER".equals(account.role()) && account.email() != null) {
             shopId = shopOwnerRepository.findByEmail(account.email())
                     .map(owner -> {
-                        System.out.println("Found shop owner: " + owner.getId() + ", email: " + owner.getEmail());
                         List<swari.sewa.module.shop.entity.Shop> shops = shopRepository.findByShopOwnerId(owner.getId());
-                        System.out.println("Found shops for owner " + owner.getId() + ": " + shops.size());
-                        if (!shops.isEmpty()) {
-                            System.out.println("Shop ID: " + shops.get(0).getId());
-                        }
                         return shops.isEmpty() ? null : shops.get(0).getId();
                     })
                     .orElse(null);
-            System.out.println("Final shopId for " + account.email() + ": " + shopId);
         }
-        
+
         return LoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
@@ -187,6 +313,8 @@ public class AuthServiceImpl implements AuthService {
                 .role(account.role())
                 .shopId(shopId)
                 .phone(account.phone())
+                .customerCode(account.customerCode())
+                .mustChangePassword(account.mustChangePassword())
                 .build();
     }
 

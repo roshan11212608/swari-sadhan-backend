@@ -1,0 +1,36 @@
+# Template for the local dev profile.
+#
+# Copy this file to application-dev.properties (which is gitignored) and fill in
+# the real values. NEVER commit application-dev.properties or paste keys into
+# tickets, chats or screenshots. Every value here can also be supplied as an
+# environment variable instead - see application.properties for the names.
+
+# --- Email OTP delivery via Brevo SMTP relay -------------------------------
+# MAIL_USERNAME / MAIL_PASSWORD come from Brevo > SMTP & API > SMTP.
+# The password is the Brevo *SMTP key* (starts with xsmtpsib-), NOT a REST API key.
+# Copy the login from the dashboard verbatim; a wrong login fails with
+# "535 5.7.8 Authentication failed" even when the key is correct.
+#
+# Brevo also blocks unauthorized IPs: the first send from a new network fails
+# with "525 5.7.1 Unauthorized IP address" until that public IP is added under
+# Brevo > SMTP & API > authorized IP addresses. Home connections get a new IP
+# after a router reboot, so expect to re-add it. If that becomes tiresome, set
+# brevo.api-key instead and clear the two spring.mail credentials below -
+# EmailService then uses the REST API, which has no IP restriction.
+spring.mail.host=smtp-relay.brevo.com
+spring.mail.port=587
+spring.mail.username=your-login@smtp-brevo.com
+spring.mail.password=your-brevo-smtp-key
+
+# From address for outgoing mail. Must be confirmed under
+# Brevo > Settings > Senders & IP > Senders. The @smtp-brevo.com login is
+# rejected as a From address, so this property is required.
+brevo.sender-email=your-verified-sender@example.com
+brevo.sender-name=Swari Sadhan
+
+# --- SMS OTP ---------------------------------------------------------------
+# Leave brevo.api-key empty in dev: Brevo SMS consumes paid credits, so the dev
+# profile skips the API entirely and logs the SMS OTP to the console instead.
+# Set it only in production, where real SMS delivery is required.
+brevo.api-key=
+brevo.sms-sender=SwariSadhn

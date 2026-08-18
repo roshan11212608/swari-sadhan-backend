@@ -43,4 +43,25 @@ public class ExpenseCategoryController {
         return category.map(c -> ResponseEntity.ok(ApiResponse.success(c)))
                       .orElse(ResponseEntity.ok(ApiResponse.error("Category not found")));
     }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<ExpenseCategory>> createCategory(@RequestBody ExpenseCategory category) {
+        // Check if category with same name already exists
+        Optional<ExpenseCategory> existing = expenseCategoryService.getCategoryByName(category.getName());
+        if (existing.isPresent()) {
+            return ResponseEntity.ok(ApiResponse.success(existing.get()));
+        }
+        // Set defaults if not provided
+        if (category.getColor() == null || category.getColor().isBlank()) {
+            category.setColor("#f97316");
+        }
+        if (category.getIcon() == null || category.getIcon().isBlank()) {
+            category.setIcon("📁");
+        }
+        if (category.getIsActive() == null) {
+            category.setIsActive(true);
+        }
+        ExpenseCategory saved = expenseCategoryService.createCategory(category);
+        return ResponseEntity.ok(ApiResponse.success(saved));
+    }
 }

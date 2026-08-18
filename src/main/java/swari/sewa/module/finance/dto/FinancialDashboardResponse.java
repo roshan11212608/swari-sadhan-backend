@@ -68,5 +68,6 @@ public class FinancialDashboardResponse {
         private BigDecimal revenue;
         private BigDecimal expenses;
         private BigDecimal profit;
+        private BigDecimal netProfit;
     }
 }

@@ -14,8 +14,12 @@ import swari.sewa.module.user.entity.User;
 public interface UserRepository extends JpaRepository<User, Long> {
     
     Optional<User> findByEmail(String email);
-    
+
+    Optional<User> findByPhoneNumber(String phoneNumber);
+
     boolean existsByEmail(String email);
+
+    boolean existsByPhoneNumber(String phoneNumber);
     
     @Query("SELECT u FROM User u WHERE u.role = :role AND u.isActive = true")
     java.util.List<User> findByRoleAndIsActive(@Param("role") UserRole role);
@@ -31,4 +35,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     
     @Query("SELECT COUNT(u) FROM User u WHERE u.role = :role AND u.isActive = true")
     Long countByRoleAndIsActive(@Param("role") UserRole role);
+
+    @Query("SELECT MAX(u.customerCode) FROM User u WHERE u.customerCode LIKE :prefix%")
+    String findMaxCustomerCodeByPrefix(@Param("prefix") String prefix);
 }

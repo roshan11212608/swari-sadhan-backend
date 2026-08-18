@@ -179,6 +179,22 @@ public class ShopOwner {
     @Column(name = "subscription_expires_at")
     private LocalDateTime subscriptionExpiresAt;
 
+    // Approval workflow fields
+    @Column(name = "approval_status", nullable = false)
+    private String approvalStatus = "PENDING";
+
+    @Column(name = "password_changed", nullable = false)
+    private Boolean passwordChanged = false;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "approved_by")
+    private Long approvedBy;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

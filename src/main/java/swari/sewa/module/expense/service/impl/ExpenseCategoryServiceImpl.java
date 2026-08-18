@@ -40,4 +40,9 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     public Optional<ExpenseCategory> getCategoryByName(String name) {
         return expenseCategoryRepository.findByName(name);
     }
+
+    @Override
+    public ExpenseCategory createCategory(ExpenseCategory category) {
+        return expenseCategoryRepository.save(category);
+    }
 }

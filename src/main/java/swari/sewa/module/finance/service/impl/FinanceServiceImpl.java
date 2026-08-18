@@ -109,12 +109,14 @@ public class FinanceServiceImpl implements FinanceService {
             BigDecimal monthRevenue = businessCalculationEngine.getSalesValue(shopId, monthStartDateTime, monthEndDateTime);
             BigDecimal monthExpenses = businessCalculationEngine.getOperatingExpenses(shopId, monthStart, monthEnd);
             BigDecimal monthProfit = businessCalculationEngine.getGrossProfit(shopId, monthStartDateTime, monthEndDateTime);
+            BigDecimal monthNetProfit = businessCalculationEngine.getNetProfit(shopId, monthStartDateTime, monthEndDateTime);
             
             yearlyOverview.add(FinancialDashboardResponse.YearlyOverviewData.builder()
                     .month(months[monthDate.getMonthValue() - 1] + " " + monthDate.getYear())
                     .revenue(monthRevenue)
                     .expenses(monthExpenses)
                     .profit(monthProfit)
+                    .netProfit(monthNetProfit)
                     .build());
         }
 
@@ -133,12 +135,14 @@ public class FinanceServiceImpl implements FinanceService {
             BigDecimal yearRevenue = businessCalculationEngine.getSalesValue(shopId, yearStartDateTime, yearEndDateTime);
             BigDecimal yearExpenses = businessCalculationEngine.getOperatingExpenses(shopId, yearStart, yearEnd);
             BigDecimal yearProfit = businessCalculationEngine.getGrossProfit(shopId, yearStartDateTime, yearEndDateTime);
+            BigDecimal yearNetProfit = businessCalculationEngine.getNetProfit(shopId, yearStartDateTime, yearEndDateTime);
             
             fiveYearOverview.add(FinancialDashboardResponse.YearlyOverviewData.builder()
                     .month(String.valueOf(year))
                     .revenue(yearRevenue)
                     .expenses(yearExpenses)
                     .profit(yearProfit)
+                    .netProfit(yearNetProfit)
                     .build());
         }
 

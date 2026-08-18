@@ -14,6 +14,7 @@ import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.module.user.service.UserService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -29,12 +30,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserDto createUser(SignupRequest signupRequest) {
-        if (userRepository.existsByEmail(signupRequest.getEmail())) {
+        // Email is optional for mobile-only signups (public users). Only run
+        // the duplicate check when an email is actually provided.
+        if (signupRequest.getEmail() != null && !signupRequest.getEmail().isBlank()
+                && userRepository.existsByEmail(signupRequest.getEmail())) {
             throw new EmailAlreadyExistsException("Email already exists: " + signupRequest.getEmail());
         }
 
         User user = User.builder()
-                .email(signupRequest.getEmail())
+                .email(signupRequest.getEmail() == null || signupRequest.getEmail().isBlank()
+                        ? null : signupRequest.getEmail())
                 .password(passwordEncoder.encode(signupRequest.getPassword()))
                 .firstName(signupRequest.getFirstName())
                 .lastName(signupRequest.getLastName())
@@ -42,6 +47,8 @@ public class UserServiceImpl implements UserService {
                 .role(signupRequest.getRole())
                 .isActive(true)
                 .isEmailVerified(false)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
 
         User savedUser = userRepository.save(user);
@@ -83,14 +90,18 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
 
-        if (!user.getEmail().equals(userDto.getEmail()) && userRepository.existsByEmail(userDto.getEmail())) {
+        if (userDto.getEmail() != null && !userDto.getEmail().isBlank()
+                && !userDto.getEmail().equals(user.getEmail())
+                && userRepository.existsByEmail(userDto.getEmail())) {
             throw new EmailAlreadyExistsException("Email already exists: " + userDto.getEmail());
         }
 
         user.setFirstName(userDto.getFirstName());
         user.setLastName(userDto.getLastName());
         user.setPhoneNumber(userDto.getPhoneNumber());
-        user.setEmail(userDto.getEmail());
+        if (userDto.getEmail() != null) {
+            user.setEmail(userDto.getEmail().isBlank() ? null : userDto.getEmail());
+        }
 
         User updatedUser = userRepository.save(user);
         return modelMapper.map(updatedUser, UserDto.class);

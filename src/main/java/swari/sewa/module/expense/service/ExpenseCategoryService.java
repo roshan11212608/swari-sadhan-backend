@@ -14,4 +14,6 @@ public interface ExpenseCategoryService {
     Optional<ExpenseCategory> getCategoryById(Long id);
     
     Optional<ExpenseCategory> getCategoryByName(String name);
+    
+    ExpenseCategory createCategory(ExpenseCategory category);
 }

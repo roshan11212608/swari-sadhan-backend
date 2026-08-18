@@ -17,6 +17,8 @@ public class CredentialsDto {
     private String role;
     private String userType; // "SHOP_OWNER" or "PUBLIC_USER"
     private String status; // "ACTIVE", "INACTIVE", "BLOCKED"
+    private String approvalStatus; // "PENDING", "APPROVED", "REJECTED" (shop owners only)
+    private String rejectionReason; // For rejected shop owners
     private LocalDateTime createdAt;
     private LocalDateTime lastLoginAt;
     private String name;

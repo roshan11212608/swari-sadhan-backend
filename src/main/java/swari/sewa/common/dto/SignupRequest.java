@@ -14,7 +14,6 @@ import swari.sewa.common.enums.UserRole;
 @NoArgsConstructor
 @AllArgsConstructor
 public class SignupRequest {
-    @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
     private String email;
     

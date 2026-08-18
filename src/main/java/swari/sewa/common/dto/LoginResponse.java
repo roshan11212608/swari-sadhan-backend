@@ -20,4 +20,6 @@ public class LoginResponse {
     private String role;
     private Long shopId;
     private String phone;
+    private String customerCode;
+    private Boolean mustChangePassword;
 }

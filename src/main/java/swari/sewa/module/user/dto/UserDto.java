@@ -16,7 +16,6 @@ import swari.sewa.common.enums.UserRole;
 public class UserDto {
     private Long id;
 
-    @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
     private String email;
 
@@ -29,6 +28,8 @@ public class UserDto {
     private String lastName;
 
     private String phoneNumber;
+
+    private String customerCode;
 
     private UserRole role;
 

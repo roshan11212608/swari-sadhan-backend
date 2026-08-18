@@ -91,10 +91,22 @@ spring.datasource.password=your_password
 jwt.secret=your-secret-key-here
 jwt.expiration=86400000
 
-# Mail Configuration (optional)
-spring.mail.username=your-email@gmail.com
-spring.mail.password=your-app-password
 ```
+
+Secrets (mail credentials, Brevo keys) belong in the gitignored
+`src/main/resources/application-dev.properties`, or in environment variables —
+never in `application.properties`. Copy the provided template to get started:
+
+```bash
+cp src/main/resources/application-dev.properties.example \
+   src/main/resources/application-dev.properties
+```
+
+Email OTPs are delivered through the Brevo SMTP relay (`smtp-relay.brevo.com:587`)
+using a Brevo **SMTP key**; `brevo.sender-email` must be a sender verified in the
+Brevo dashboard. SMS OTPs are **not** sent in the `dev` profile — Brevo SMS costs
+credits, so the code is logged to the console instead. OTPs are never returned in
+an API response.
 
 ### 3. Build and Run
 
