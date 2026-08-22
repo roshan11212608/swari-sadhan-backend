@@ -53,6 +53,7 @@ public class VehicleController {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final FileStorageService fileStorageService;
+    private final swari.sewa.module.subscription.service.SubscriptionAccessService subscriptionAccessService;
 
     private boolean hasRole(Authentication authentication, String role) {
         if (authentication == null || authentication.getAuthorities() == null) {
@@ -84,6 +85,19 @@ public class VehicleController {
                 .orElse(null);
     }
 
+    /**
+     * Resolve the authenticated shop owner's ID from the JWT context.
+     */
+    private Long resolveCurrentShopOwnerIdOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            return null;
+        }
+        return shopOwnerRepository.findByEmail(authentication.getName())
+                .map(ShopOwner::getId)
+                .orElse(null);
+    }
+
     // Simple test endpoint without database operations
     @GetMapping("/test-connection")
     public ResponseEntity<Map<String, String>> testConnection() {
@@ -92,6 +106,24 @@ public class VehicleController {
         response.put("message", "Backend connection is working");
         response.put("timestamp", java.time.LocalDateTime.now().toString());
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Returns the current vehicle usage for the authenticated shop owner:
+     * subscription status, plan name, current vehicle count, vehicle limit,
+     * remaining slots, and trial information.
+     */
+    @GetMapping("/usage")
+    @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
+    public ResponseEntity<?> getVehicleUsage() {
+        Long shopOwnerId = resolveCurrentShopOwnerIdOrNull();
+        if (shopOwnerId == null) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Shop owner not found");
+            error.put("message", "Could not resolve shop owner from authentication.");
+            return ResponseEntity.status(403).body(error);
+        }
+        return ResponseEntity.ok(subscriptionAccessService.getVehicleUsage(shopOwnerId));
     }
 
     // Temporary endpoint to create a test shop for development
@@ -239,6 +271,15 @@ public class VehicleController {
                 return ResponseEntity.status(404).body(errorResponse);
             }
 
+            // Subscription access check: shop owners must have an ACTIVE or TRIAL subscription
+            // to add vehicles. Super admins bypass this check.
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
+                Long shopOwnerId = resolveCurrentShopOwnerIdOrNull();
+                if (shopOwnerId != null) {
+                    subscriptionAccessService.validateCanAddVehicle(shopOwnerId);
+                }
+            }
+
             // Parse vehicle JSON from request part or handle direct VehicleDto for backward compatibility
             VehicleDto vehicleDto;
             if (vehicleJson != null && !vehicleJson.trim().isEmpty()) {
@@ -293,6 +334,10 @@ public class VehicleController {
 
             VehicleDto createdVehicle = vehicleService.createVehicle(vehicleDto, shopIdToUse);
             return ResponseEntity.ok(createdVehicle);
+        } catch (swari.sewa.module.subscription.exception.SubscriptionRequiredException
+                | swari.sewa.module.subscription.exception.SubscriptionLimitExceededException e) {
+            // Let the GlobalExceptionHandler handle these with proper error codes
+            throw e;
         } catch (Exception e) {
             // Log the error and return a proper error response
             e.printStackTrace();
@@ -657,7 +702,16 @@ public class VehicleController {
             if (shopIdToUse == null) {
                 throw new IllegalArgumentException("Shop ID could not be resolved. Please ensure you have a shop associated with your account.");
             }
-            
+
+            // Subscription access check: shop owners must have an ACTIVE or TRIAL subscription
+            // to sell vehicles. Super admins bypass this check.
+            if (hasRole(authentication, "SHOP_OWNER") && !hasRole(authentication, "SUPERADMIN")) {
+                Long shopOwnerId = resolveCurrentShopOwnerIdOrNull();
+                if (shopOwnerId != null) {
+                    subscriptionAccessService.requireVehicleAccess(shopOwnerId);
+                }
+            }
+
             System.out.println("Final shop ID to use: " + shopIdToUse);
             
             // Debug: Log customer data
@@ -689,6 +743,10 @@ public class VehicleController {
             VehicleDto vehicle = vehicleService.markAsSold(id, customerData, shopIdToUse);
             System.out.println("Vehicle marked as sold successfully");
             return ResponseEntity.ok(vehicle);
+        } catch (swari.sewa.module.subscription.exception.SubscriptionRequiredException
+                | swari.sewa.module.subscription.exception.SubscriptionLimitExceededException e) {
+            // Let the GlobalExceptionHandler handle these with proper error codes
+            throw e;
         } catch (IllegalArgumentException e) {
             System.err.println("IllegalArgumentException: " + e.getMessage());
             e.printStackTrace();

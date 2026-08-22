@@ -15,7 +15,10 @@ import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.util.ByteArrayDataSource;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 
@@ -178,6 +181,76 @@ public class EmailService {
             root = root.getCause();
         }
         return root.getMessage();
+    }
+
+    /**
+     * Send an HTML email with a file attachment (e.g. PDF invoice).
+     *
+     * @param to             recipient email
+     * @param subject        email subject
+     * @param htmlBody       email HTML body
+     * @param attachmentName filename for the attachment (e.g. "invoice.pdf")
+     * @param attachmentData raw bytes of the attachment
+     * @param attachmentMime MIME type of the attachment (e.g. "application/pdf")
+     */
+    public void sendHtmlEmailWithAttachment(String to, String subject, String htmlBody,
+                                            String attachmentName, byte[] attachmentData, String attachmentMime) {
+        if (!isMailConfigured()) {
+            if (isBrevoEmailConfigured()) {
+                // Brevo API attachment support would need a different payload;
+                // fall back to plain email without attachment
+                log.warn("Brevo REST API does not support attachments in this config; sending email without attachment to {}", to);
+                sendViaBrevo(to, subject, htmlBody);
+                return;
+            }
+            if (isDevProfile()) {
+                log.warn("===== DEV MODE: Email with attachment not sent (mail not configured) =====");
+                log.warn("To: {} | Subject: {} | Attachment: {} ({} bytes)", to, subject, attachmentName, attachmentData.length);
+                log.warn("Body: {}", htmlBody.replaceAll("<[^>]+>", " ").trim());
+                log.warn("=============================================================================");
+                return;
+            }
+            log.error("Mail is not configured; cannot send email with attachment to {}", to);
+            return;
+        }
+
+        String fromEmail = resolveFromAddress();
+        if (fromEmail == null) {
+            log.error("No usable From address for attachment email to {}", to);
+            if (isDevProfile()) {
+                logDevFallback("From address not configured", to, subject, htmlBody);
+                return;
+            }
+            return;
+        }
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            String fromAddr = senderName + " <" + fromEmail + ">";
+            helper.setFrom(fromAddr);
+            helper.setTo(to);
+            helper.setSubject(subject);
+            helper.setText(htmlBody, true);
+
+            // Add attachment
+            InputStream dataSource = new ByteArrayInputStream(attachmentData);
+            helper.addAttachment(attachmentName, new ByteArrayDataSource(dataSource, attachmentMime));
+
+            mailSender.send(message);
+            log.info("Email with attachment '{}' sent to {} with subject '{}'", attachmentName, to, subject);
+        } catch (Exception e) {
+            log.error("Failed to send email with attachment to {} via {}:{} as user '{}': {} | SMTP reply: {}",
+                    to, mailHost, mailPort, mailUsername, e.getMessage(), rootCauseMessage(e));
+            if (isDevProfile()) {
+                log.warn("===== DEV MODE FALLBACK: Attachment email send failed =====");
+                log.warn("To: {} | Subject: {} | Attachment: {}", to, subject, attachmentName);
+                log.warn("Body: {}", htmlBody.replaceAll("<[^>]+>", " ").trim());
+                log.warn("==========================================================");
+                return;
+            }
+            throw new RuntimeException("Failed to send email with attachment", e);
+        }
     }
 
     /**

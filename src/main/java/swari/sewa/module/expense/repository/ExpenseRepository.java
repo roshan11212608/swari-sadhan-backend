@@ -31,6 +31,8 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     List<Expense> findByShopIdAndIsActiveTrue(Long shopId);
     
     Page<Expense> findByShopIdAndIsActiveTrue(Long shopId, Pageable pageable);
+
+    Optional<Expense> findByReferenceNumber(String referenceNumber);
     
     @Query("SELECT e FROM Expense e WHERE e.shop.id = :shopId AND e.isActive = true " +
            "AND (:title IS NULL OR LOWER(e.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +

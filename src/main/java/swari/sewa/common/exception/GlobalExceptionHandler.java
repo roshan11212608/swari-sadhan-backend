@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import lombok.extern.slf4j.Slf4j;
+import swari.sewa.module.subscription.exception.*;
 
 @RestControllerAdvice
 @Slf4j
@@ -276,9 +277,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ShopServiceException.class)
     public ResponseEntity<ErrorResponse> handleShopServiceException(
             ShopServiceException ex, WebRequest request) {
-        
+
         log.error("Shop service exception at path: {} - {}", request.getDescription(false), ex.getMessage(), ex);
-        
+
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
@@ -286,8 +287,161 @@ public class GlobalExceptionHandler {
                 .message(ex.getMessage())
                 .path(request.getDescription(false))
                 .build();
-        
+
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+
+    // ===== Subscription Module Exceptions =====
+
+    @ExceptionHandler(SubscriptionPlanNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionPlanNotFoundException(
+            SubscriptionPlanNotFoundException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.NOT_FOUND.value())
+                .error("Subscription Plan Not Found")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    @ExceptionHandler(SubscriptionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionNotFoundException(
+            SubscriptionNotFoundException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.NOT_FOUND.value())
+                .error("Subscription Not Found")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    @ExceptionHandler(CouponNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCouponNotFoundException(
+            CouponNotFoundException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.NOT_FOUND.value())
+                .error("Coupon Not Found")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    @ExceptionHandler(InvalidCouponException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCouponException(
+            InvalidCouponException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Invalid Coupon")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(TrialNotAvailableException.class)
+    public ResponseEntity<ErrorResponse> handleTrialNotAvailableException(
+            TrialNotAvailableException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Trial Not Available")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(PlanNotAvailableException.class)
+    public ResponseEntity<ErrorResponse> handlePlanNotAvailableException(
+            PlanNotAvailableException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Plan Not Available")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    }
+
+    @ExceptionHandler(InvalidSubscriptionStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSubscriptionStateException(
+            InvalidSubscriptionStateException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("Invalid Subscription State")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+
+    @ExceptionHandler(SubscriptionLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionLimitExceededException(
+            SubscriptionLimitExceededException ex, WebRequest request) {
+        java.util.Map<String, Object> metadata = new java.util.HashMap<>();
+        metadata.put("currentCount", ex.getCurrentCount());
+        if (ex.getLimit() != null) metadata.put("vehicleLimit", ex.getLimit());
+        if (ex.getPlanName() != null) metadata.put("planName", ex.getPlanName());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.UNPROCESSABLE_ENTITY.value())
+                .error("Vehicle Limit Reached")
+                .message(ex.getMessage())
+                .code(ex.getCode())
+                .metadata(metadata)
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(errorResponse);
+    }
+
+    @ExceptionHandler(SubscriptionRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionRequiredException(
+            SubscriptionRequiredException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.FORBIDDEN.value())
+                .error("Subscription Required")
+                .message(ex.getMessage())
+                .code(ex.getCode())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
+
+    @ExceptionHandler(DuplicateSlugException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateSlugException(
+            DuplicateSlugException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("Duplicate Slug")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+
+    @ExceptionHandler(DuplicateCouponCodeException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateCouponCodeException(
+            DuplicateCouponCodeException ex, WebRequest request) {
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("Duplicate Coupon Code")
+                .message(ex.getMessage())
+                .path(request.getDescription(false))
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
     }
 
     @ExceptionHandler(RuntimeException.class)

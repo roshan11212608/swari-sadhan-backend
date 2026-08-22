@@ -23,7 +23,7 @@ import java.util.Arrays;
 @Configuration
 @EnableWebSecurity
 @Profile("dev")
-@EnableMethodSecurity(prePostEnabled = false)
+@EnableMethodSecurity(prePostEnabled = true)
 public class TestSecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

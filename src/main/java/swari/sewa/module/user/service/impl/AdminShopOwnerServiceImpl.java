@@ -19,7 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import swari.sewa.common.service.FileStorageService;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
+
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import swari.sewa.common.enums.UserRole;
 import swari.sewa.module.auth.entity.ShopRegOtp;
 import swari.sewa.module.auth.repository.ShopRegOtpRepository;
@@ -31,10 +35,12 @@ import swari.sewa.module.shop.repository.ShopRepository;
 import swari.sewa.module.vehicle.repository.VehicleRepository;
 import swari.sewa.module.dashboard.dto.ShopOwnerDto;
 import swari.sewa.module.user.service.AdminShopOwnerService;
+import swari.sewa.module.subscription.service.TrialSubscriptionService;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
     private final ShopOwnerRepository shopOwnerRepository;
@@ -46,6 +52,8 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     private final ObjectMapper objectMapper;
     private final ShopRegOtpRepository shopRegOtpRepository;
     private final EmailService emailService;
+    private final TrialSubscriptionService trialSubscriptionService;
+    private final EntityManager entityManager;
 
     @Override
     @Transactional(readOnly = true)
@@ -326,12 +334,60 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     }
 
     @Override
+    @Transactional
     public void deleteShopOwner(Long id) {
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
-        
-        // Delete ShopOwner directly
+
+        Long shopOwnerId = shopOwner.getId();
+
+        // Delete all related records in FK-safe order using native SQL.
+        // Order: child tables first, then parent tables.
+
+        // 1. Delete records that reference vehicles (for vehicles belonging to this owner's shops)
+        executeUpdate("DELETE w FROM wishlists w INNER JOIN vehicles v ON w.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE e FROM enquiries e INNER JOIN vehicles v ON e.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE sa FROM sell_applications sa INNER JOIN vehicles v ON sa.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN vehicles v ON sva.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE vi FROM vehicle_images vi INNER JOIN vehicles v ON vi.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+
+        // 2. Delete vehicles
+        executeUpdate("DELETE v FROM vehicles v INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+
+        // 3. Delete records that reference shops (not via vehicles)
+        executeUpdate("DELETE e FROM employees e INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE en FROM enquiries en INNER JOIN shops s ON en.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE ex FROM expenses ex INNER JOIN shops s ON ex.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        executeUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN shops s ON sva.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+
+        // 4. Delete subscriptions
+        executeUpdate("DELETE FROM subscriptions WHERE shop_owner_id = :id", shopOwnerId);
+
+        // 5. Delete shop owner permissions
+        executeUpdate("DELETE FROM shop_owner_permissions WHERE shop_owner_id = :id", shopOwnerId);
+
+        // 6. Delete shops
+        executeUpdate("DELETE FROM shops WHERE shop_owner_id = :id", shopOwnerId);
+
+        // 7. Delete the mirrored user row
+        executeUpdate("DELETE FROM users WHERE email = :email", shopOwner.getEmail());
+
+        // 8. Delete the shop owner
         shopOwnerRepository.delete(shopOwner);
+
+        log.info("Deleted shop owner {} ({}) and all related records", shopOwnerId, shopOwner.getEmail());
+    }
+
+    private void executeUpdate(String sql, Long id) {
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter("id", id);
+        query.executeUpdate();
+    }
+
+    private void executeUpdate(String sql, String email) {
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter("email", email);
+        query.executeUpdate();
     }
 
     @Override
@@ -419,19 +475,39 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     }
 
     @Override
+    @Transactional
     public void suspendShopOwner(Long id) {
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
         shopOwner.setActive(false);
         shopOwnerRepository.save(shopOwner);
+
+        // Sync the active flag into the mirrored users row so login is blocked.
+        // The login flow reads active from the users table, so without this
+        // a suspended shop owner could still log in.
+        userRepository.findByEmail(shopOwner.getEmail()).ifPresent(user -> {
+            user.setActive(false);
+            userRepository.save(user);
+        });
+
+        log.info("Suspended shop owner {} ({})", id, shopOwner.getEmail());
     }
 
     @Override
+    @Transactional
     public void reactivateShopOwner(Long id) {
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
         shopOwner.setActive(true);
         shopOwnerRepository.save(shopOwner);
+
+        // Sync the active flag into the mirrored users row so login works again.
+        userRepository.findByEmail(shopOwner.getEmail()).ifPresent(user -> {
+            user.setActive(true);
+            userRepository.save(user);
+        });
+
+        log.info("Reactivated shop owner {} ({})", id, shopOwner.getEmail());
     }
 
     @Override
@@ -441,11 +517,34 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
         }
         ShopOwner shopOwner = shopOwnerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Shop owner not found"));
+
+        // Detect first-time password change (temp password → real password)
+        boolean wasFirstChange = !Boolean.TRUE.equals(shopOwner.getPasswordChanged());
+
         String encoded = passwordEncoder.encode(newPassword);
         shopOwner.setPassword(encoded);
         shopOwner.setPasswordChanged(true);
         shopOwnerRepository.save(shopOwner);
         syncMirroredUserPassword(shopOwner.getEmail(), encoded);
+
+        // After the first password change (post-approval onboarding), auto-start trial.
+        // Trial creation runs in its own transaction (REQUIRES_NEW) so that a trial
+        // failure does NOT roll back the password change. The password is already
+        // saved at this point. We log the failure but do not expose it to the user.
+        if (wasFirstChange) {
+            try {
+                boolean started = trialSubscriptionService.startTrialIfNeeded(id);
+                if (started) {
+                    log.info("Trial subscription auto-started for shop owner {} after first password change", id);
+                }
+            } catch (Exception e) {
+                log.error("Failed to auto-start trial subscription for shop owner {} after first password change: {}",
+                        id, e.getMessage(), e);
+                // Do NOT throw — the password change succeeded, and the trial
+                // can be started manually later. Throwing would confuse the user
+                // who just changed their password successfully.
+            }
+        }
     }
 
     /**

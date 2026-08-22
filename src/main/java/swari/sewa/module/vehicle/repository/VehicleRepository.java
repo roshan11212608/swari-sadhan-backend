@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +22,10 @@ import swari.sewa.module.vehicle.entity.Vehicle;
 public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     Page<Vehicle> findByShopId(Long shopId, Pageable pageable);
+
+    @Modifying
+    @Query("DELETE FROM Vehicle v WHERE v.shop.id = :shopId")
+    void deleteByShopId(@Param("shopId") Long shopId);
 
     Page<Vehicle> findByStatusNot(VehicleStatus status, Pageable pageable);
 
@@ -38,10 +43,16 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId")
     long countByShop_ShopOwner_Id(@Param("shopOwnerId") Long shopOwnerId);
-    
+
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.status = :status")
     long countByShop_ShopOwner_IdAndStatus(@Param("shopOwnerId") Long shopOwnerId, @Param("status") VehicleStatus status);
-    
+
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.createdAt >= :since")
+    long countByShop_ShopOwner_IdAndCreatedAtAfter(@Param("shopOwnerId") Long shopOwnerId, @Param("since") LocalDateTime since);
+
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.isFeatured = true")
+    long countFeaturedByShop_ShopOwner_Id(@Param("shopOwnerId") Long shopOwnerId);
+
     Page<Vehicle> findByIsFeaturedTrue(Pageable pageable);
     
     boolean existsByRegistrationNumber(String registrationNumber);
