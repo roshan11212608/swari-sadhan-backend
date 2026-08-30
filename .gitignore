@@ -23,6 +23,8 @@ target/
 src/main/resources/application-dev.properties
 .env
 .env.local
+ca.pem
+truststore.jks
 
 ### NetBeans ###
 /nbproject/private/

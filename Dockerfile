@@ -16,10 +16,12 @@ RUN chmod +x mvnw && ./mvnw clean package -DskipTests
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 
-# Copy the generated executable JAR
+# Copy the generated executable JAR and the startup script
 COPY --from=build /app/target/swari-sewa-backend-0.0.1-SNAPSHOT.jar app.jar
+COPY entrypoint.sh entrypoint.sh
+RUN chmod +x entrypoint.sh
 
 # Render injects the PORT env var; the app uses it via server.port=${PORT:8081}
 EXPOSE 8081
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/app/entrypoint.sh"]
