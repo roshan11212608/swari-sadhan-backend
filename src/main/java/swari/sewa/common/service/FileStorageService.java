@@ -1,5 +1,6 @@
 package swari.sewa.common.service;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -11,6 +12,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -22,9 +24,11 @@ public class FileStorageService {
     @Value("${app.backend-base-url:http://localhost:8081}")
     private String backendBaseUrl;
 
-    private final Path rootLocation;
+    private Path rootLocation;
 
-    public FileStorageService() {
+    @PostConstruct
+    public void init() {
+        Objects.requireNonNull(uploadDir, "app.upload.dir must not be null");
         this.rootLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.rootLocation);
