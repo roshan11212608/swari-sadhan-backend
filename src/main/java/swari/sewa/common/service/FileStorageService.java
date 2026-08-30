@@ -19,10 +19,13 @@ public class FileStorageService {
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
+    @Value("${app.backend-base-url:http://localhost:8081}")
+    private String backendBaseUrl;
+
     private final Path rootLocation;
 
     public FileStorageService() {
-        this.rootLocation = Paths.get("uploads").toAbsolutePath().normalize();
+        this.rootLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.rootLocation);
         } catch (IOException e) {
@@ -48,7 +51,7 @@ public class FileStorageService {
             Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
 
             // Return the full URL path
-            return "http://localhost:8081/uploads/" + newFilename;
+            return backendBaseUrl + "/uploads/" + newFilename;
         } catch (IOException e) {
             throw new RuntimeException("Failed to store file " + file.getOriginalFilename(), e);
         }

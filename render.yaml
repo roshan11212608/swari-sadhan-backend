@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: swari-sadhan-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Database, JWT, payment, and email credentials must be added
+      # in the Render Dashboard. Do not commit secrets to this file.

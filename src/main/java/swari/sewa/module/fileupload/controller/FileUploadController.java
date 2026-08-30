@@ -1,6 +1,7 @@
 package swari.sewa.module.fileupload.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -19,14 +20,17 @@ import java.util.UUID;
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class FileUploadController {
 
-    private static final String UPLOAD_DIR = "uploads/";
-    private static final String BASE_URL = "http://localhost:8081/uploads/";
+    @Value("${app.upload.dir:uploads}")
+    private String uploadDir;
+
+    @Value("${app.backend-base-url:http://localhost:8081}")
+    private String backendBaseUrl;
 
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> uploadFile(@RequestParam("file") MultipartFile file) {
         try {
             // Create upload directory if it doesn't exist
-            Path uploadPath = Paths.get(UPLOAD_DIR);
+            Path uploadPath = Paths.get(uploadDir);
             if (!Files.exists(uploadPath)) {
                 Files.createDirectories(uploadPath);
             }
@@ -41,7 +45,7 @@ public class FileUploadController {
             Files.copy(file.getInputStream(), filePath);
 
             // Return file URL
-            String fileUrl = BASE_URL + filename;
+            String fileUrl = backendBaseUrl + "/uploads/" + filename;
             Map<String, String> response = new HashMap<>();
             response.put("url", fileUrl);
             response.put("filename", filename);
