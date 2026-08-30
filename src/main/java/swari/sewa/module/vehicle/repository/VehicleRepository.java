@@ -50,6 +50,9 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.createdAt >= :since")
     long countByShop_ShopOwner_IdAndCreatedAtAfter(@Param("shopOwnerId") Long shopOwnerId, @Param("since") LocalDateTime since);
 
+    @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.createdAt >= :from AND v.createdAt < :to")
+    long countByShop_ShopOwner_IdAndCreatedAtBetween(@Param("shopOwnerId") Long shopOwnerId, @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.shopOwner.id = :shopOwnerId AND v.isFeatured = true")
     long countFeaturedByShop_ShopOwner_Id(@Param("shopOwnerId") Long shopOwnerId);
 
@@ -72,8 +75,8 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "(:model IS NULL OR v.modelName = :model) AND " +
            "(:vehicleType IS NULL OR v.vehicleType = :vehicleType) AND " +
            "(:fuelType IS NULL OR v.fuelType = :fuelType) AND " +
-           "(:minPrice IS NULL OR v.price >= :minPrice) AND " +
-           "(:maxPrice IS NULL OR v.price <= :maxPrice) AND " +
+           "(:minPrice IS NULL OR v.sellingPrice >= :minPrice) AND " +
+           "(:maxPrice IS NULL OR v.sellingPrice <= :maxPrice) AND " +
            "(:minYear IS NULL OR v.manufacturingYear >= :minYear) AND " +
            "(:maxYear IS NULL OR v.manufacturingYear <= :maxYear) AND " +
            "(:minKilometers IS NULL OR v.kilometersDriven >= :minKilometers) AND " +
@@ -125,7 +128,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
     Long countByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
     
-    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    @Query("SELECT COALESCE(SUM(v.sellingPrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
     BigDecimal sumPriceByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
     
     @Query("SELECT COALESCE(SUM(v.purchasePrice + COALESCE(v.additionalExpenses, 0)), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND (COALESCE(v.boughtDate, v.createdAt) BETWEEN :startDate AND :endDate)")
@@ -134,7 +137,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     @Query("SELECT COALESCE(SUM(v.purchasePrice + COALESCE(v.additionalExpenses, 0)), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
     BigDecimal sumPurchasePriceByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
     
-    @Query("SELECT COALESCE(SUM(v.price - (COALESCE(v.purchasePrice, 0) + COALESCE(v.repairCost, 0) + COALESCE(v.additionalExpenses, 0))), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
+    @Query("SELECT COALESCE(SUM(v.sellingPrice - (COALESCE(v.purchasePrice, 0) + COALESCE(v.repairCost, 0) + COALESCE(v.additionalExpenses, 0))), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status AND v.soldAt BETWEEN :startDate AND :endDate")
     BigDecimal sumGrossProfitByShopIdAndStatusAndSoldAtBetween(@Param("shopId") Long shopId, @Param("status") VehicleStatus status, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
     
     // Business Calculation Engine Queries
@@ -161,7 +164,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "FROM (" +
            "  SELECT " +
            "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
-           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as sales, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.selling_price ELSE 0 END as sales, " +
            "  CASE WHEN COALESCE(v.bought_date, v.created_at) BETWEEN :startDate AND :endDate THEN COALESCE(v.purchase_price, 0) + COALESCE(v.additional_expenses, 0) ELSE 0 END as purchases " +
            "  FROM vehicles v " +
            "  WHERE v.shop_id = :shopId " +
@@ -180,7 +183,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "FROM (" +
            "  SELECT " +
            "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
-           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as sales " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.selling_price ELSE 0 END as sales " +
            "  FROM vehicles v " +
            "  WHERE v.shop_id = :shopId " +
            "  AND (:isYearly = false OR YEAR(v.sold_at) = YEAR(:startDate))" +
@@ -199,8 +202,8 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "FROM (" +
            "  SELECT " +
            "  CASE WHEN :isYearly = true THEN CAST(YEAR(v.sold_at) AS CHAR) ELSE SUBSTRING(MONTHNAME(v.sold_at), 1, 3) END as period, " +
-           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as grossProfit, " +
-           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as netProfit " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.selling_price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as grossProfit, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN (v.selling_price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))) ELSE 0 END as netProfit " +
            "  FROM vehicles v " +
            "  WHERE v.shop_id = :shopId " +
            "  AND (:isYearly = false OR YEAR(v.sold_at) = YEAR(:startDate))" +
@@ -219,7 +222,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "FROM (" +
            "  SELECT " +
            "  CASE WHEN :isYearly = true THEN CAST(YEAR(COALESCE(v.sold_at, v.bought_date, v.created_at)) AS CHAR) ELSE SUBSTRING(MONTHNAME(COALESCE(v.sold_at, v.bought_date, v.created_at)), 1, 3) END as period, " +
-           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.price ELSE 0 END as moneyIn, " +
+           "  CASE WHEN v.status = 'SOLD' AND v.sold_at BETWEEN :startDate AND :endDate THEN v.selling_price ELSE 0 END as moneyIn, " +
            "  CASE WHEN COALESCE(v.bought_date, v.created_at) BETWEEN :startDate AND :endDate THEN COALESCE(v.purchase_price, 0) ELSE 0 END as moneyOut " +
            "  FROM vehicles v " +
            "  WHERE v.shop_id = :shopId " +
@@ -232,7 +235,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
            "WHEN 'Sep' THEN 9 WHEN 'Oct' THEN 10 WHEN 'Nov' THEN 11 WHEN 'Dec' THEN 12 END END", nativeQuery = true)
     List<Object[]> getCashFlowTrend(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate, @Param("isYearly") Boolean isYearly);
     
-    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
+    @Query("SELECT COALESCE(SUM(v.sellingPrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
     BigDecimal sumPriceByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") VehicleStatus status);
     
     @Query("SELECT COALESCE(SUM(v.purchasePrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId")
@@ -241,6 +244,6 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     @Query("SELECT COALESCE(SUM(v.purchasePrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
     BigDecimal sumPurchasePriceByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") String status);
     
-    @Query("SELECT COALESCE(SUM(v.price), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
+    @Query("SELECT COALESCE(SUM(v.sellingPrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
     BigDecimal sumPriceByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
 }

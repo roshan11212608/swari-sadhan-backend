@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import swari.sewa.module.subscription.dto.CouponResponse;
+import swari.sewa.module.subscription.dto.CouponUsageResponse;
 import swari.sewa.module.subscription.dto.CouponValidationResponse;
 import swari.sewa.module.subscription.dto.CreateCouponRequest;
 import swari.sewa.module.subscription.dto.UpdateCouponRequest;
@@ -21,9 +22,14 @@ import swari.sewa.module.subscription.repository.SubscriptionCouponUsageReposito
 import swari.sewa.module.subscription.service.SubscriptionAuditService;
 import swari.sewa.module.subscription.service.SubscriptionCouponService;
 
+import swari.sewa.module.user.entity.ShopOwner;
+import swari.sewa.module.user.repository.ShopOwnerRepository;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -34,6 +40,7 @@ public class SubscriptionCouponServiceImpl implements SubscriptionCouponService 
     private final SubscriptionCouponRepository couponRepository;
     private final SubscriptionCouponUsageRepository couponUsageRepository;
     private final SubscriptionAuditService auditService;
+    private final ShopOwnerRepository shopOwnerRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -49,6 +56,35 @@ public class SubscriptionCouponServiceImpl implements SubscriptionCouponService 
         log.info("Fetching coupon by id: {}", id);
         SubscriptionCoupon coupon = findCouponById(id);
         return mapToResponse(coupon);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CouponUsageResponse> getCouponUsages(Long couponId) {
+        log.info("Fetching usages for coupon: {}", couponId);
+        findCouponById(couponId); // validate exists
+        return couponUsageRepository.findByCouponIdOrderByUsedAtDesc(couponId).stream()
+                .map(this::mapToUsageResponse)
+                .collect(Collectors.toList());
+    }
+
+    private CouponUsageResponse mapToUsageResponse(swari.sewa.module.subscription.entity.SubscriptionCouponUsage usage) {
+        ShopOwner owner = shopOwnerRepository.findById(usage.getShopOwnerId()).orElse(null);
+        String name = owner != null
+                ? (owner.getFirstName() != null ? owner.getFirstName() : "") +
+                  (owner.getLastName() != null && !owner.getLastName().isBlank() ? " " + owner.getLastName() : "")
+                : "Unknown";
+        return CouponUsageResponse.builder()
+                .id(usage.getId())
+                .couponId(usage.getCouponId())
+                .transactionId(usage.getTransactionId())
+                .shopOwnerId(usage.getShopOwnerId())
+                .shopOwnerName(name.trim().isEmpty() ? "Unknown" : name)
+                .shopOwnerEmail(owner != null ? owner.getEmail() : null)
+                .shopOwnerPhone(owner != null ? owner.getPhone() : null)
+                .discountAmount(usage.getDiscountAmount())
+                .usedAt(usage.getUsedAt())
+                .build();
     }
 
     @Override

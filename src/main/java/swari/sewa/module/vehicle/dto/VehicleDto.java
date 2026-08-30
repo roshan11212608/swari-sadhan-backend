@@ -60,6 +60,8 @@ public class VehicleDto {
 
     private BigDecimal sellPrice;
 
+    private BigDecimal offeredPrice;
+
     private BigDecimal purchasePrice;
 
     private BigDecimal additionalExpenditure;

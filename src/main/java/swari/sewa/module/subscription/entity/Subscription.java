@@ -57,6 +57,18 @@ public class Subscription {
     @Column(name = "vehicle_limit_snapshot")
     private Integer vehicleLimitSnapshot;
 
+    // The base plan vehicle limit (monthly limit × cycle months), excluding carry-forward.
+    // Used for UI display to show how much came from the plan vs rollover.
+    @Column(name = "new_plan_vehicle_limit")
+    private Integer newPlanVehicleLimit;
+
+    // Unused vehicle allowance carried forward from the previous billing period.
+    // On renewal: oldUnused = max(0, oldLimit - oldUsed).
+    // totalVehicleLimit = newPlanVehicleLimit + carriedForwardVehicleLimit.
+    @Column(name = "carried_forward_vehicle_limit")
+    @Builder.Default
+    private Integer carriedForwardVehicleLimit = 0;
+
     @Column(name = "price_paid", precision = 10, scale = 2)
     private BigDecimal pricePaid;
 
@@ -67,6 +79,12 @@ public class Subscription {
 
     @Column(name = "start_date", nullable = false)
     private LocalDateTime startDate;
+
+    // Start of the current billing period. Used for vehicle-allowance counting.
+    // On renewal, this moves to the old endDate so the new period gets a fresh
+    // vehicle allowance. startDate preserves the original subscription start.
+    @Column(name = "current_period_start", nullable = false)
+    private LocalDateTime currentPeriodStart;
 
     @Column(name = "end_date", nullable = false)
     private LocalDateTime endDate;

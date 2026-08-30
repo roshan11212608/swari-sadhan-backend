@@ -20,7 +20,7 @@ public interface PublicVehicleListingService {
 
     PublicVehicleListingResponseDto getPublicListing(Long id);
 
-    Page<PublicVehicleListingResponseDto> getPublicListings(Pageable pageable);
+    Page<PublicVehicleListingResponseDto> getPublicListings(Pageable pageable, java.math.BigDecimal maxPrice, String brand, String city);
 
     PublicVehicleListingAdminDto getListingForAdmin(Long id);
 
@@ -35,6 +35,8 @@ public interface PublicVehicleListingService {
     PublicVehicleListingAdminDto markAsSold(Long id, PublicVehicleListingActionDto action);
 
     PublicVehicleListingAdminDto underReviewListing(Long id);
+
+    PublicVehicleListingAdminDto unpublishListing(Long id, PublicVehicleListingActionDto action);
 
     List<String> getAllActiveVehicleNumbers();
 }

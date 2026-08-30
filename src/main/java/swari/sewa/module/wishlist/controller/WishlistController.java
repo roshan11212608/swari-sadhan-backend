@@ -91,4 +91,14 @@ public class WishlistController {
         Long count = wishlistService.getWishlistCount(customerId);
         return ResponseEntity.ok(count);
     }
+
+    @PutMapping("/{id}/remark")
+    @PreAuthorize("hasRole('SUPERADMIN') or (hasRole('PUBLIC') and @userSecurity.isOwner(#id, authentication.name)) or (hasRole('SHOP_OWNER') and @shopSecurity.isWishlistOwner(#id, authentication.name))")
+    public ResponseEntity<WishlistDto> updateRemark(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body) {
+        String remark = body.get("remark");
+        WishlistDto updated = wishlistService.updateRemark(id, remark);
+        return ResponseEntity.ok(updated);
+    }
 }

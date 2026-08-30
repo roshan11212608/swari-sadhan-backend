@@ -64,11 +64,11 @@ public class VehicleCostCalculatorImpl implements VehicleCostCalculator {
 
     @Override
     public BigDecimal calculateGrossProfit(Vehicle vehicle) {
-        if (vehicle == null || vehicle.getPrice() == null) {
+        if (vehicle == null || vehicle.getSellingPrice() == null) {
             return BigDecimal.ZERO;
         }
         
-        BigDecimal sellingPrice = vehicle.getPrice();
+        BigDecimal sellingPrice = vehicle.getSellingPrice();
         BigDecimal cogs = calculateCOGS(vehicle);
         
         return sellingPrice.subtract(cogs);

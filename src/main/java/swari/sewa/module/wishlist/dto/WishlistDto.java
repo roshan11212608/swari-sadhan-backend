@@ -39,7 +39,9 @@ public class WishlistDto {
     }
     
     private String shopName;
-    
+
+    private String remark;
+
     // Convenience setter for shopName
     public void setShopName(String shopName) {
         this.shopName = shopName;

@@ -151,8 +151,8 @@ public class PublicVehicleListingServiceImpl implements PublicVehicleListingServ
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PublicVehicleListingResponseDto> getPublicListings(Pageable pageable) {
-        return listingRepository.findPublishedListings(pageable).map(this::toResponseDto);
+    public Page<PublicVehicleListingResponseDto> getPublicListings(Pageable pageable, java.math.BigDecimal maxPrice, String brand, String city) {
+        return listingRepository.findPublishedListings(maxPrice, brand, city, pageable).map(this::toResponseDto);
     }
 
     @Override
@@ -278,6 +278,26 @@ public class PublicVehicleListingServiceImpl implements PublicVehicleListingServ
             return toAdminDto(listing);
         }
 
+        return toAdminDto(listing);
+    }
+
+    @Override
+    public PublicVehicleListingAdminDto unpublishListing(Long id, PublicVehicleListingActionDto action) {
+        PublicVehicleListing listing = getAdminListing(id);
+
+        if (listing.getStatus() != PublicVehicleListingStatus.PUBLISHED) {
+            throw new RuntimeException("Only published listings can be unpublished. Current status: " + listing.getStatus());
+        }
+
+        listing.setStatus(PublicVehicleListingStatus.UNPUBLISHED);
+        listing.setPublishedAt(null);
+        listing.setReviewedAt(LocalDateTime.now());
+        if (action != null && action.getNotes() != null && !action.getNotes().isEmpty()) {
+            listing.setAdminNotes(action.getNotes());
+        }
+
+        listing = listingRepository.save(listing);
+        saveHistory(id, "ADMIN", "UNPUBLISHED", action != null ? action.getReason() : null, action != null ? action.getNotes() : null);
         return toAdminDto(listing);
     }
 

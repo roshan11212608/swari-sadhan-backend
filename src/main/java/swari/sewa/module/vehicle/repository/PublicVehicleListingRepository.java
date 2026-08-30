@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import swari.sewa.common.enums.PublicVehicleListingStatus;
 import swari.sewa.module.vehicle.entity.PublicVehicleListing;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -38,8 +39,16 @@ public interface PublicVehicleListingRepository extends JpaRepository<PublicVehi
             @Param("vehicleNumber") String vehicleNumber,
             @Param("statuses") List<PublicVehicleListingStatus> statuses);
 
-    @Query("SELECT p FROM PublicVehicleListing p WHERE p.status = 'PUBLISHED' AND (p.soldAt IS NULL) ORDER BY p.publishedAt DESC")
-    Page<PublicVehicleListing> findPublishedListings(Pageable pageable);
+    @Query("SELECT p FROM PublicVehicleListing p WHERE p.status = 'PUBLISHED' AND (p.soldAt IS NULL) " +
+           "AND (:maxPrice IS NULL OR p.price <= :maxPrice) " +
+           "AND (:brand IS NULL OR p.brand = :brand) " +
+           "AND (:city IS NULL OR p.sellerAddress LIKE CONCAT('%', :city, '%')) " +
+           "ORDER BY p.publishedAt DESC")
+    Page<PublicVehicleListing> findPublishedListings(
+            @Param("maxPrice") BigDecimal maxPrice,
+            @Param("brand") String brand,
+            @Param("city") String city,
+            Pageable pageable);
 
     @Query("SELECT COUNT(p) FROM PublicVehicleListing p WHERE p.status = :status")
     long countByStatus(@Param("status") PublicVehicleListingStatus status);

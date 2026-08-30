@@ -40,7 +40,10 @@ public class Wishlist {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "vehicle_id", nullable = false)
     private Vehicle vehicle;
-    
+
+    @Column(name = "remark", columnDefinition = "TEXT")
+    private String remark;
+
     // Convenience getter for vehicle
     public Vehicle getVehicle() {
         return vehicle;

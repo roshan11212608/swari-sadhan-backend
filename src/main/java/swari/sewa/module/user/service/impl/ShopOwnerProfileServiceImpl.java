@@ -15,6 +15,7 @@ import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
 import swari.sewa.module.shop.entity.Shop;
 import swari.sewa.module.shop.repository.ShopRepository;
+import swari.sewa.module.shop.repository.ShopReviewRepository;
 import swari.sewa.module.vehicle.entity.Vehicle;
 import swari.sewa.module.vehicle.repository.VehicleRepository;
 import swari.sewa.module.enquiry.entity.Enquiry;
@@ -37,6 +38,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
 
     private final ShopOwnerRepository shopOwnerRepository;
     private final ShopRepository shopRepository;
+    private final ShopReviewRepository shopReviewRepository;
     private final VehicleRepository vehicleRepository;
     private final EnquiryRepository enquiryRepository;
     private final UserRepository userRepository;
@@ -279,14 +281,29 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
         long activeShops = shopRepository.countByShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.ShopStatus.ACTIVE);
         long totalVehicles = vehicleRepository.countByShop_ShopOwner_Id(shopOwner.getId());
         long activeVehicles = vehicleRepository.countByShop_ShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.VehicleStatus.ACTIVE);
+        long soldVehicles = vehicleRepository.countByShop_ShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.VehicleStatus.SOLD);
         long totalEnquiries = enquiryRepository.countByShop_ShopOwner_Id(shopOwner.getId());
         long pendingEnquiries = enquiryRepository.countByShop_ShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.EnquiryStatus.PENDING);
+
+        // Aggregate rating across all shops owned by this shop owner.
+        double rating = 0.0;
+        long ratingCount = 0;
+        for (Shop shop : shopRepository.findByShopOwnerId(shopOwner.getId())) {
+            double shopAvg = shopReviewRepository.getAverageRatingByShopId(shop.getId());
+            long shopReviews = shopReviewRepository.countByShopId(shop.getId());
+            rating += shopAvg * shopReviews;
+            ratingCount += shopReviews;
+        }
+        double averageRating = ratingCount > 0 ? Math.round((rating / ratingCount) * 10.0) / 10.0 : 0.0;
         
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalShops", totalShops);
         stats.put("activeShops", activeShops);
         stats.put("totalVehicles", totalVehicles);
         stats.put("activeVehicles", activeVehicles);
+        stats.put("soldVehicles", soldVehicles);
+        stats.put("rating", averageRating);
+        stats.put("ratingCount", ratingCount);
         stats.put("totalEnquiries", totalEnquiries);
         stats.put("pendingEnquiries", pendingEnquiries);
         

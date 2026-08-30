@@ -38,4 +38,7 @@ public interface ShopOwnerRepository extends JpaRepository<ShopOwner, Long> {
     
     @Query("SELECT COUNT(s) FROM ShopOwner s WHERE s.emailVerified = true")
     long countVerifiedEmail();
+
+    @Query("SELECT s FROM ShopOwner s WHERE NOT EXISTS (SELECT 1 FROM Subscription sub WHERE sub.shopOwnerId = s.id)")
+    Page<ShopOwner> findUnsubscribed(Pageable pageable);
 }

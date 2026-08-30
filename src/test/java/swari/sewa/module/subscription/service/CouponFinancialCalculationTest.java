@@ -11,6 +11,7 @@ import swari.sewa.module.subscription.repository.SubscriptionCouponRepository;
 import swari.sewa.module.subscription.repository.SubscriptionCouponUsageRepository;
 import swari.sewa.module.subscription.service.impl.SubscriptionCouponServiceImpl;
 import swari.sewa.module.subscription.service.SubscriptionAuditService;
+import swari.sewa.module.user.repository.ShopOwnerRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,7 +42,8 @@ class CouponFinancialCalculationTest {
         couponRepository = Mockito.mock(SubscriptionCouponRepository.class);
         usageRepository = Mockito.mock(SubscriptionCouponUsageRepository.class);
         SubscriptionAuditService auditService = Mockito.mock(SubscriptionAuditService.class);
-        couponService = new SubscriptionCouponServiceImpl(couponRepository, usageRepository, auditService);
+        ShopOwnerRepository shopOwnerRepository = Mockito.mock(ShopOwnerRepository.class);
+        couponService = new SubscriptionCouponServiceImpl(couponRepository, usageRepository, auditService, shopOwnerRepository);
     }
 
     private SubscriptionCoupon createPercentageCoupon(String code, Integer percentage, BigDecimal maxDiscount, BigDecimal minPurchase, Integer usageLimit) {

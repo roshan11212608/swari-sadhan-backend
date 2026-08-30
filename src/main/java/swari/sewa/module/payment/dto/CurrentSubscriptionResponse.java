@@ -43,8 +43,25 @@ public class CurrentSubscriptionResponse {
     private Integer enquiriesUsed;
     private Integer featuredUsed;
 
+    // Vehicle allowance rollover fields
+    private Integer newPlanVehicleLimit;
+    private Integer carriedForwardVehicleLimit;
+    private Integer totalVehicleLimit;
+    private Integer vehiclesRemaining;
+
     // Latest payment info
     private String invoiceNumber;
     private String paymentGateway;
     private String transactionUuid;
+
+    // Previous plan info (if user upgraded/renewed from a different plan)
+    private String previousPlanName;
+    private BigDecimal previousPlanPrice;
+    private String previousPlanBillingCycle;
+    private LocalDateTime previousPlanStartDate;
+    private LocalDateTime previousPlanEndDate;
+    private Integer previousPlanVehicleLimit;
+    private Integer previousPlanVehiclesUsed;
+    private Integer previousPlanUnused;
+    private Boolean hasPreviousPlan;
 }

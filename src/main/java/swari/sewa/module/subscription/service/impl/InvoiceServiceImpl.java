@@ -10,7 +10,6 @@ import swari.sewa.module.subscription.service.InvoiceService;
 import swari.sewa.module.subscription.service.SubscriptionSettingsService;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 @Service
 @Transactional
@@ -26,23 +25,26 @@ public class InvoiceServiceImpl implements InvoiceService {
         int year = LocalDateTime.now().getYear();
         String prefix = settingsService.getSettingsEntity().getInvoicePrefix();
 
-        Optional<SubscriptionInvoiceSequence> seqOpt = sequenceRepository.findAll().stream()
-                .filter(s -> s.getYear().equals(year))
-                .findFirst();
+        // Use pessimistic locking (SELECT ... FOR UPDATE) to prevent concurrent
+        // invoice generations from reading the same nextVal and producing duplicates.
+        Integer currentNextVal = sequenceRepository.findNextValByYearForUpdate(year);
 
         int nextVal;
-        if (seqOpt.isEmpty()) {
+        if (currentNextVal == null) {
+            // No sequence row for this year — create one starting at 2 (we return 1)
             SubscriptionInvoiceSequence seq = SubscriptionInvoiceSequence.builder()
                     .year(year)
                     .nextVal(2)
                     .build();
-            sequenceRepository.save(seq);
+            sequenceRepository.saveAndFlush(seq);
             nextVal = 1;
         } else {
-            SubscriptionInvoiceSequence seq = seqOpt.get();
-            nextVal = seq.getNextVal();
-            seq.setNextVal(nextVal + 1);
-            sequenceRepository.save(seq);
+            // Update the existing row with the next value
+            // The pessimistic lock ensures no other transaction can read this row
+            // until our transaction commits
+            nextVal = currentNextVal;
+            sequenceRepository.incrementNextVal(year, currentNextVal + 1);
+            sequenceRepository.flush();
         }
 
         String invoiceNumber = String.format("%s-%d-%06d", prefix, year, nextVal);

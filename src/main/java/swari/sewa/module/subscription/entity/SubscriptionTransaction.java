@@ -47,6 +47,11 @@ public class SubscriptionTransaction {
     @Column(name = "coupon_id")
     private Long couponId;
 
+    // Coupon code frozen at payment time. Coupons are hard-deleted and can be
+    // renamed, so resolving the code from couponId is not historically stable.
+    @Column(name = "coupon_code_snapshot", length = 50)
+    private String couponCodeSnapshot;
+
     @Builder.Default
     @Column(precision = 12, scale = 2)
     private BigDecimal discount = BigDecimal.ZERO;

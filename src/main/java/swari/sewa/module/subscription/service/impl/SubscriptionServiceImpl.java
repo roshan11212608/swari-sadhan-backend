@@ -78,6 +78,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .ownerName(shopOwner != null ? shopOwner.getFirstName() + " " + shopOwner.getLastName() : null)
                 .planId(subscription.getPlan() != null ? subscription.getPlan().getId() : null)
                 .currentPlan(subscription.getPlan() != null ? subscription.getPlan().getName() : null)
+                .billingCycle(subscription.getBillingCycleSnapshot())
                 .trial(subscription.getTrialId() != null)
                 .trialId(subscription.getTrialId())
                 .startDate(subscription.getStartDate())
@@ -87,6 +88,8 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .renewalDate(subscription.getRenewalDate())
                 .lastPaymentDate(lastPayment.date())
                 .lastPaymentAmount(lastPayment.amount())
+                .lastTransactionUuid(lastPayment.transactionUuid())
+                .lastInvoiceNumber(lastPayment.invoiceNumber())
                 .usage(usage)
                 .email(shopOwner != null ? shopOwner.getEmail() : null)
                 .phone(shopOwner != null ? shopOwner.getPhone() : null)
@@ -94,6 +97,14 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .suspendedDate(subscription.getSuspendedDate())
                 .reason(subscription.getReason())
                 .build();
+    }
+
+    @Override
+    public SubscriberDetailsResponse getSubscriberByShopOwnerId(Long shopOwnerId) {
+        log.info("Fetching subscriber details by shop owner id: {}", shopOwnerId);
+        Subscription subscription = subscriptionRepository.findFirstByShopOwnerIdOrderByCreatedAtDesc(shopOwnerId)
+                .orElseThrow(() -> new SubscriptionNotFoundException("No subscription found for shop owner id: " + shopOwnerId));
+        return getSubscriberById(subscription.getId());
     }
 
     @Override
@@ -225,6 +236,7 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .ownerName(shopOwner != null ? shopOwner.getFirstName() + " " + shopOwner.getLastName() : null)
                 .planId(subscription.getPlan() != null ? subscription.getPlan().getId() : null)
                 .currentPlan(subscription.getPlan() != null ? subscription.getPlan().getName() : null)
+                .billingCycle(subscription.getBillingCycleSnapshot())
                 .trial(subscription.getTrialId() != null)
                 .trialId(subscription.getTrialId())
                 .startDate(subscription.getStartDate())
@@ -243,8 +255,14 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         long vehiclesUsed = vehicleRepository.countByShop_ShopOwner_Id(shopOwnerId);
         long employeesUsed = getEmployeeCountForShopOwner(subscription);
 
+        Integer vehicleLimit = subscription.getVehicleLimitSnapshot();
+        if (vehicleLimit == null && subscription.getPlan() != null) {
+            vehicleLimit = subscription.getNewPlanVehicleLimit();
+        }
+
         return UsageDto.builder()
                 .vehiclesUsed(vehiclesUsed)
+                .vehiclesLimit(vehicleLimit)
                 .employeesUsed(employeesUsed)
                 .storageUsed("N/A")
                 .build();
@@ -270,10 +288,10 @@ public class SubscriptionServiceImpl implements SubscriptionService {
 
         if (lastTxnPage.hasContent()) {
             SubscriptionTransaction lastTxn = lastTxnPage.getContent().get(0);
-            return new LastPaymentInfo(lastTxn.getTransactionDate(), lastTxn.getFinalAmount());
+            return new LastPaymentInfo(lastTxn.getTransactionDate(), lastTxn.getFinalAmount(), lastTxn.getTransactionId(), lastTxn.getInvoiceNumber());
         }
-        return new LastPaymentInfo(null, null);
+        return new LastPaymentInfo(null, null, null, null);
     }
 
-    private record LastPaymentInfo(LocalDateTime date, BigDecimal amount) {}
+    private record LastPaymentInfo(LocalDateTime date, BigDecimal amount, String transactionUuid, String invoiceNumber) {}
 }

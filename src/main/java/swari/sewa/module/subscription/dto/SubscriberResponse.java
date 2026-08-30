@@ -12,6 +12,7 @@ public class SubscriberResponse {
     private String ownerName;
     private Long planId;
     private String currentPlan;
+    private String billingCycle;
     private Boolean trial;
     private Long trialId;
     private LocalDateTime startDate;

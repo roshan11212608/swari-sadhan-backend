@@ -12,6 +12,7 @@ public class SubscriberDetailsResponse {
     private String ownerName;
     private Long planId;
     private String currentPlan;
+    private String billingCycle;
     private Boolean trial;
     private Long trialId;
     private LocalDateTime startDate;
@@ -21,6 +22,8 @@ public class SubscriberDetailsResponse {
     private LocalDateTime renewalDate;
     private LocalDateTime lastPaymentDate;
     private BigDecimal lastPaymentAmount;
+    private String lastTransactionUuid;
+    private String lastInvoiceNumber;
     private UsageDto usage;
     private String email;
     private String phone;

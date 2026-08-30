@@ -26,4 +26,6 @@ public interface WishlistService {
     void deleteWishlist(Long id);
     
     Long getWishlistCount(Long customerId);
+
+    WishlistDto updateRemark(Long id, String remark);
 }

@@ -93,14 +93,13 @@ public class VehicleServiceImpl implements VehicleService {
 
         // Map frontend fields to backend entity fields correctly
         // Frontend: price = cost price, sellPrice = selling price
-        // Backend: purchasePrice = cost price, price = selling price
-        if (vehicleDto.getSellPrice() != null) {
-            vehicle.setPrice(vehicleDto.getSellPrice());
-        } else {
-            vehicle.setPrice(vehicleDto.getPrice()); // Fallback if sellPrice not provided
-        }
+        // Backend: price = cost price, purchasePrice = cost price, sellingPrice = selling price
         if (vehicleDto.getPrice() != null) {
+            vehicle.setPrice(vehicleDto.getPrice());
             vehicle.setPurchasePrice(vehicleDto.getPrice());
+        }
+        if (vehicleDto.getSellPrice() != null) {
+            vehicle.setSellingPrice(vehicleDto.getSellPrice());
         }
 
         // Map other fields manually
@@ -288,7 +287,16 @@ public class VehicleServiceImpl implements VehicleService {
         }
 
         modelMapper.map(vehicleDto, vehicle);
-        
+
+        // Explicitly map selling/cost price to correct entity columns
+        if (vehicleDto.getPrice() != null) {
+            vehicle.setPrice(vehicleDto.getPrice());
+            vehicle.setPurchasePrice(vehicleDto.getPrice());
+        }
+        if (vehicleDto.getSellPrice() != null) {
+            vehicle.setSellingPrice(vehicleDto.getSellPrice());
+        }
+
         // Explicitly preserve lotsNumber
         if (vehicleDto.getLotsNumber() != null) {
             vehicle.setLotsNumber(vehicleDto.getLotsNumber());
@@ -342,7 +350,16 @@ public class VehicleServiceImpl implements VehicleService {
         }
 
         modelMapper.map(vehicleDto, vehicle);
-        
+
+        // Explicitly map selling/cost price to correct entity columns
+        if (vehicleDto.getPrice() != null) {
+            vehicle.setPrice(vehicleDto.getPrice());
+            vehicle.setPurchasePrice(vehicleDto.getPrice());
+        }
+        if (vehicleDto.getSellPrice() != null) {
+            vehicle.setSellingPrice(vehicleDto.getSellPrice());
+        }
+
         // Explicitly preserve lotsNumber
         if (vehicleDto.getLotsNumber() != null) {
             vehicle.setLotsNumber(vehicleDto.getLotsNumber());
@@ -480,7 +497,7 @@ public class VehicleServiceImpl implements VehicleService {
             existingApplication.setCitizenshipFrontPhoto(customerData.getCitizenshipFrontPhoto());
             existingApplication.setCitizenshipBackPhoto(customerData.getCitizenshipBackPhoto());
             existingApplication.setApplicationDate(saleDate);
-            existingApplication.setOfferedPrice(customerData.getOfferedPrice() != null ? customerData.getOfferedPrice() : vehicle.getPrice());
+            existingApplication.setOfferedPrice(customerData.getOfferedPrice() != null ? customerData.getOfferedPrice() : vehicle.getSellingPrice());
             existingApplication.setOfferedPriceInWords(customerData.getOfferedPriceInWords());
             existingApplication.setPaymentMethod(customerData.getPaymentMethod());
             existingApplication.setDownPayment(customerData.getDownPayment());
@@ -502,7 +519,7 @@ public class VehicleServiceImpl implements VehicleService {
                     .shopId(shopId)
                     .vehicleBrand(vehicle.getBrandName())
                     .vehicleModel(vehicle.getModelName())
-                    .vehiclePrice(vehicle.getPrice())
+                    .vehiclePrice(vehicle.getSellingPrice())
                     .customerName(customerData.getCustomerName())
                     .customerParentName(customerData.getCustomerParentName())
                     .customerPhone(customerData.getCustomerPhone())
@@ -513,7 +530,7 @@ public class VehicleServiceImpl implements VehicleService {
                     .citizenshipFrontPhoto(customerData.getCitizenshipFrontPhoto())
                     .citizenshipBackPhoto(customerData.getCitizenshipBackPhoto())
                     .applicationDate(saleDate)
-                    .offeredPrice(customerData.getOfferedPrice() != null ? customerData.getOfferedPrice() : vehicle.getPrice())
+                    .offeredPrice(customerData.getOfferedPrice() != null ? customerData.getOfferedPrice() : vehicle.getSellingPrice())
                     .offeredPriceInWords(customerData.getOfferedPriceInWords())
                     .paymentMethod(customerData.getPaymentMethod())
                     .downPayment(customerData.getDownPayment())
@@ -628,11 +645,21 @@ public class VehicleServiceImpl implements VehicleService {
         dto.setLastServiceDate(vehicle.getLastServiceDate());
 
         // Map backend fields to frontend fields correctly
-        // Backend: purchasePrice = cost price, price = selling price
+        // Backend: price = cost price, purchasePrice = cost price, sellingPrice = selling price
         // Frontend: price = cost price, sellPrice = selling price
-        dto.setPrice(vehicle.getPurchasePrice()); // Frontend price = backend purchasePrice (cost price)
-        dto.setSellPrice(vehicle.getPrice()); // Frontend sellPrice = backend price (selling price)
+        dto.setPrice(vehicle.getPrice()); // Frontend price = backend price (cost price)
+        dto.setSellPrice(vehicle.getSellingPrice()); // Frontend sellPrice = backend sellingPrice
         dto.setPurchasePrice(vehicle.getPurchasePrice()); // Also set purchasePrice field for reference
+        // For sold vehicles, fetch the offered price from the sell vehicle application
+        if (vehicle.getStatus() == VehicleStatus.SOLD) {
+            List<swari.sewa.module.vehicle.entity.SellVehicleApplication> apps = sellVehicleApplicationRepository.findByVehicleId(vehicle.getId());
+            if (!apps.isEmpty()) {
+                apps.stream()
+                        .filter(a -> a.getOfferedPrice() != null)
+                        .reduce((first, second) -> second) // get latest
+                        .ifPresent(app -> dto.setOfferedPrice(app.getOfferedPrice()));
+            }
+        }
         dto.setOwnershipType(vehicle.getOwnershipType());
         dto.setIsFeatured(vehicle.getIsFeatured());
         dto.setRejectionReason(vehicle.getRejectionReason());

@@ -109,6 +109,15 @@ public class WishlistServiceImpl implements WishlistService {
         return wishlistRepository.countByCustomerId(customerId);
     }
 
+    @Override
+    public WishlistDto updateRemark(Long id, String remark) {
+        Wishlist wishlist = wishlistRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Wishlist not found with id: " + id));
+        wishlist.setRemark(remark);
+        Wishlist saved = wishlistRepository.save(wishlist);
+        return mapToDtoWithDetails(saved);
+    }
+
     private WishlistDto mapToDtoWithDetails(Wishlist wishlist) {
         WishlistDto dto = modelMapper.map(wishlist, WishlistDto.class);
         dto.setCustomerId(wishlist.getCustomer().getId());
@@ -118,8 +127,9 @@ public class WishlistServiceImpl implements WishlistService {
         dto.setVehicleId(wishlist.getVehicle().getId());
         dto.setVehicleTitle(wishlist.getVehicle().getTitle());
         dto.setVehicleMainImageUrl(wishlist.getVehicle().getMainImageUrl());
-        dto.setVehiclePrice(wishlist.getVehicle().getPrice());
+        dto.setVehiclePrice(wishlist.getVehicle().getSellingPrice());
         dto.setShopName(wishlist.getVehicle().getShop().getName());
+        dto.setRemark(wishlist.getRemark());
         return dto;
     }
 }

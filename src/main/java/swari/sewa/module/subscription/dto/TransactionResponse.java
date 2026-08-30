@@ -23,4 +23,6 @@ public class TransactionResponse {
     private String status;
     private String invoiceNumber;
     private LocalDateTime transactionDate;
+    /** Business currency this transaction was settled in. */
+    private String currency;
 }

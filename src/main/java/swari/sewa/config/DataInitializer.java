@@ -106,8 +106,11 @@ public class DataInitializer implements CommandLineRunner {
                                 .email("owner@shop.com")
                                 .password("Owner@123") // This should be encoded
                                 .phone("977-9841234568")
+                                .role(UserRole.SHOP_OWNER)
                                 .active(true)
                                 .emailVerified(true)
+                                .approvalStatus("PENDING")
+                                .passwordChanged(false)
                                 .build();
                     });
 

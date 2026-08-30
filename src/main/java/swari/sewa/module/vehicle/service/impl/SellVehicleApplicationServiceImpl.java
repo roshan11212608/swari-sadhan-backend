@@ -235,7 +235,7 @@ public class SellVehicleApplicationServiceImpl implements SellVehicleApplication
         dto.setVehicleTitle(application.getVehicle().getTitle());
         dto.setVehicleBrand(application.getVehicle().getBrandName());
         dto.setVehicleModel(application.getVehicle().getModelName());
-        dto.setVehiclePrice(application.getVehicle().getPrice());
+        dto.setVehiclePrice(application.getVehicle().getSellingPrice());
         dto.setShopId(application.getShop().getId());
         return dto;
     }

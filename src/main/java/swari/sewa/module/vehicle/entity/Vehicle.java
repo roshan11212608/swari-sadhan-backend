@@ -196,6 +196,9 @@ public class Vehicle {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
     
+    @Column(name = "selling_price", precision = 12, scale = 2)
+    private BigDecimal sellingPrice;
+    
     @Column(name = "is_negotiable")
     @Builder.Default
     private Boolean isNegotiable = true;

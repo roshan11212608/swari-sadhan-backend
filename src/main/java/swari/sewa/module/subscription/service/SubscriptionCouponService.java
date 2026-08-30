@@ -4,7 +4,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import swari.sewa.module.subscription.dto.*;
 
+
 import java.math.BigDecimal;
+import java.util.List;
 
 public interface SubscriptionCouponService {
     Page<CouponResponse> getCoupons(String search, Boolean active, Pageable pageable);
@@ -18,6 +20,8 @@ public interface SubscriptionCouponService {
      * Validate a coupon for a given amount (read-only, for UI preview).
      * Does NOT lock the coupon or consume usage.
      */
+    List<CouponUsageResponse> getCouponUsages(Long couponId);
+
     CouponValidationResponse validateCoupon(String code, BigDecimal amount);
 
     /**

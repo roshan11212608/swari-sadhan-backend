@@ -47,6 +47,13 @@ public class SubscriptionSubscriberController {
         return ResponseEntity.ok(ApiResponse.success(subscriber, "Subscriber retrieved successfully"));
     }
 
+    @GetMapping("/by-shop-owner/{shopOwnerId}")
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<ApiResponse<SubscriberDetailsResponse>> getSubscriberByShopOwner(@PathVariable Long shopOwnerId) {
+        SubscriberDetailsResponse subscriber = subscriptionService.getSubscriberByShopOwnerId(shopOwnerId);
+        return ResponseEntity.ok(ApiResponse.success(subscriber, "Subscriber retrieved successfully"));
+    }
+
     @PutMapping("/{id}/upgrade")
     @PreAuthorize("hasRole('SUPERADMIN')")
     public ResponseEntity<ApiResponse<SubscriberResponse>> upgradeSubscription(@PathVariable Long id,

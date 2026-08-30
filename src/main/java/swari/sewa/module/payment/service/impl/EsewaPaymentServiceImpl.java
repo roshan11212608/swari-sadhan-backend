@@ -34,14 +34,19 @@ import swari.sewa.module.subscription.service.InvoiceService;
 import swari.sewa.module.subscription.service.SubscriptionCouponService;
 import swari.sewa.module.subscription.service.SubscriptionPlanService;
 import swari.sewa.module.subscription.service.SubscriptionSettingsService;
+import swari.sewa.module.vehicle.repository.VehicleRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @Transactional
@@ -62,6 +67,7 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
     private final SubscriptionCouponService couponService;
     private final SubscriptionCouponUsageRepository couponUsageRepository;
     private final CouponUsageRecorder couponUsageRecorder;
+    private final VehicleRepository vehicleRepository;
 
     private static final String SIGNED_FIELD_NAMES = "total_amount,transaction_uuid,product_code";
     private static final DateTimeFormatter TXN_UUID_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -315,25 +321,12 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
             }
 
             // Activate subscription — idempotent: only if not already activated
+            // Coupon usage recording is deferred to afterCommit inside activateSubscription
             if (payment.getSubscriptionId() == null) {
                 activateSubscription(payment);
                 log.info("Subscription activated for payment {}", transactionUuid);
             } else {
                 log.info("Subscription {} already exists for payment {} — skipping", payment.getSubscriptionId(), transactionUuid);
-            }
-
-            // Record coupon usage — LAST step, in a separate transaction with primitives only
-            // This must be after all critical operations so it can never corrupt the main transaction
-            if (payment.getCouponId() != null) {
-                try {
-                    couponUsageRecorder.recordUsage(
-                            payment.getCouponId(),
-                            payment.getId(),
-                            payment.getShopOwnerId(),
-                            payment.getDiscountAmount());
-                } catch (Exception e) {
-                    log.error("Coupon usage recording failed for payment {} (non-fatal): {}", payment.getId(), e.getMessage());
-                }
             }
 
         } catch (PaymentException e) {
@@ -426,7 +419,7 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
 
     // ===== Verification =====
 
-    private EsewaStatusResult verifyWithEsewa(Payment payment) {
+    protected EsewaStatusResult verifyWithEsewa(Payment payment) {
         String statusUrl = esewaConfig.getStatusUrl();
         // eSewa expects amounts as integers (e.g. "499" not "499.00")
         String totalAmountForEsewa = toEsewaAmount(payment.getTotalAmount());
@@ -474,6 +467,22 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
     private void activateSubscription(Payment payment) {
         SubscriptionPlan plan = planService.getPlanEntity(payment.getSubscriptionPlanId());
 
+        // Expire any existing TRIAL subscription so the unique constraint
+        // uk_subscriptions_active_owner (one ACTIVE-or-TRIAL per owner) is
+        // not violated when the new ACTIVE subscription is inserted.
+        subscriptionRepository.findTrialByShopOwnerId(payment.getShopOwnerId())
+                .ifPresent(trial -> {
+                    trial.setStatus(SubscriptionStatus.EXPIRED);
+                    subscriptionRepository.saveAndFlush(trial);
+                    log.info("Expired trial subscription {} for shop_owner={} upon paid activation",
+                            trial.getId(), payment.getShopOwnerId());
+                });
+
+        // Check if there's already an ACTIVE subscription (e.g. user is renewing
+        // or upgrading). If so, renew/extend it instead of creating a new one.
+        List<Subscription> existingActive = subscriptionRepository
+                .findByShopOwnerIdAndStatus(payment.getShopOwnerId(), SubscriptionStatus.ACTIVE);
+
         LocalDateTime startDate = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(startDate, payment.getBillingCycle());
 
@@ -495,40 +504,154 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
                 ? monthlyVehicleLimit * getMonthsInCycle(payment.getBillingCycle())
                 : null;
 
-        Subscription subscription = Subscription.builder()
-                .shopOwnerId(payment.getShopOwnerId())
-                .plan(plan)
-                .startDate(startDate)
-                .endDate(endDate)
-                .renewalDate(endDate)
-                .status(SubscriptionStatus.ACTIVE)
-                .autoRenewal(false)
-                // Snapshot plan details at purchase time
-                .planNameSnapshot(plan.getName())
-                .planDescriptionSnapshot(plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription())
-                .planIconSnapshot(plan.getIcon())
-                .planThemeColorSnapshot(plan.getThemeColor())
-                .vehicleLimitSnapshot(vehicleLimit)
-                .pricePaid(payment.getAmount())
-                .billingCycleSnapshot(payment.getBillingCycle())
-                .build();
+        Subscription subscription;
+        if (!existingActive.isEmpty()) {
+            // Renew/extend the existing ACTIVE subscription
+            subscription = existingActive.get(0);
 
-        subscription = subscriptionRepository.save(subscription);
+            // === Vehicle allowance rollover calculation ===
+            // Before overwriting the subscription, calculate how many vehicles were
+            // actually used in the old period and how many slots were unused.
+            // The unused slots carry forward to the new period.
+            // Count vehicles created after the old currentPeriodStart (all vehicles
+            // from the old period). At this point, no new-period vehicles exist yet.
+            int carriedForward = 0;
+            if (subscription.getVehicleLimitSnapshot() != null && subscription.getCurrentPeriodStart() != null) {
+                // Truncate to seconds to match MySQL DATETIME precision
+                LocalDateTime oldPeriodStart = subscription.getCurrentPeriodStart()
+                        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+                long oldUsed = vehicleRepository.countByShop_ShopOwner_IdAndCreatedAtAfter(
+                        payment.getShopOwnerId(), oldPeriodStart);
+                int oldLimit = subscription.getVehicleLimitSnapshot();
+                carriedForward = Math.max(0, oldLimit - (int) oldUsed);
+                log.info("Rollover: oldPeriodStart={}, oldLimit={}, oldUsed={}, carriedForward={}",
+                        oldPeriodStart, oldLimit, oldUsed, carriedForward);
+            }
+
+            // If the current subscription hasn't expired yet, extend from its end date;
+            // otherwise, start from now.
+            LocalDateTime baseDate = subscription.getEndDate() != null
+                    && subscription.getEndDate().isAfter(startDate)
+                    ? subscription.getEndDate()
+                    : startDate;
+            endDate = calculateEndDate(baseDate, payment.getBillingCycle());
+
+            // Total vehicle limit = new plan limit + carried-forward unused allowance
+            int totalVehicleLimit = vehicleLimit != null ? vehicleLimit + carriedForward : null;
+
+            // Update the existing subscription with new plan details and dates.
+            // startDate stays as the ORIGINAL subscription start (preserves history).
+            // currentPeriodStart is set to NOW (the renewal purchase date) so the new
+            // vehicle allowance takes effect immediately. The user gets a fresh vehicle
+            // limit starting from this purchase, even though the new billing period
+            // (for expiry purposes) starts from the old endDate.
+            subscription.setPlan(plan);
+            subscription.setEndDate(endDate);
+            subscription.setRenewalDate(endDate);
+            subscription.setStatus(SubscriptionStatus.ACTIVE);
+            subscription.setCurrentPeriodStart(startDate);
+            // Update snapshots to the new plan
+            subscription.setPlanNameSnapshot(plan.getName());
+            subscription.setPlanDescriptionSnapshot(plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription());
+            subscription.setPlanIconSnapshot(plan.getIcon());
+            subscription.setPlanThemeColorSnapshot(plan.getThemeColor());
+            subscription.setVehicleLimitSnapshot(totalVehicleLimit);
+            subscription.setNewPlanVehicleLimit(vehicleLimit);
+            subscription.setCarriedForwardVehicleLimit(carriedForward);
+            subscription.setPricePaid(payment.getAmount());
+            subscription.setBillingCycleSnapshot(payment.getBillingCycle());
+            subscription = subscriptionRepository.saveAndFlush(subscription);
+            log.info("Subscription {} renewed/extended for shop_owner={} until {} (period starts {}, totalLimit={} = {}+{})",
+                    subscription.getId(), payment.getShopOwnerId(), endDate, baseDate, totalVehicleLimit, vehicleLimit, carriedForward);
+        } else {
+            // No existing ACTIVE subscription — create a new one
+            subscription = Subscription.builder()
+                    .shopOwnerId(payment.getShopOwnerId())
+                    .plan(plan)
+                    .startDate(startDate)
+                    .currentPeriodStart(startDate)
+                    .endDate(endDate)
+                    .renewalDate(endDate)
+                    .status(SubscriptionStatus.ACTIVE)
+                    .autoRenewal(false)
+                    // Snapshot plan details at purchase time
+                    .planNameSnapshot(plan.getName())
+                    .planDescriptionSnapshot(plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription())
+                    .planIconSnapshot(plan.getIcon())
+                    .planThemeColorSnapshot(plan.getThemeColor())
+                    .vehicleLimitSnapshot(vehicleLimit)
+                    .newPlanVehicleLimit(vehicleLimit)
+                    .carriedForwardVehicleLimit(0)
+                    .pricePaid(payment.getAmount())
+                    .billingCycleSnapshot(payment.getBillingCycle())
+                    .build();
+            subscription = subscriptionRepository.save(subscription);
+            log.info("Subscription {} activated for shop_owner={}", subscription.getId(), payment.getShopOwnerId());
+        }
+
         payment.setSubscriptionId(subscription.getId());
+        // Freeze plan name and subscription period on the payment so that
+        // later renewals/upgrades (which overwrite the Subscription row's
+        // snapshots) do not destroy the historical record of what plan the
+        // user had at this billing period.
+        payment.setPlanNameSnapshot(plan.getName());
+        payment.setSubscriptionStartDateSnapshot(subscription.getCurrentPeriodStart());
+        payment.setSubscriptionEndDateSnapshot(subscription.getEndDate());
+        payment.setVehicleLimitSnapshot(subscription.getVehicleLimitSnapshot());
         paymentRepository.save(payment);
-        log.info("Subscription {} activated for shop_owner={}", subscription.getId(), payment.getShopOwnerId());
 
         // Create SubscriptionTransaction record for Super Admin transactions page
-        createTransactionRecord(payment, plan, subscription.getId());
+        SubscriptionTransaction txnRecord = createTransactionRecord(payment, plan, subscription.getId());
 
         // Send payment success email with invoice details
         paymentEmailService.sendPaymentSuccessEmail(payment, plan);
 
         // Auto-create an expense record so it shows in the expenses list
         paymentExpenseSyncService.createSubscriptionExpense(payment, plan);
+
+        // Defer coupon usage recording until after the main transaction commits.
+        // CouponUsageRecorder uses REQUIRES_NEW, which cannot see uncommitted rows
+        // (subscription_transactions.id FK) from this transaction. By registering
+        // an afterCommit synchronization, the REQUIRES_NEW transaction will see
+        // the committed SubscriptionTransaction row.
+        if (payment.getCouponId() != null) {
+            final Long couponId = payment.getCouponId();
+            final Long txnId = txnRecord != null ? txnRecord.getId() : payment.getId();
+            final Long shopOwnerId = payment.getShopOwnerId();
+            final BigDecimal discountAmount = payment.getDiscountAmount();
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        try {
+                            couponUsageRecorder.recordUsage(couponId, txnId, shopOwnerId, discountAmount);
+                        } catch (Exception e) {
+                            log.error("Coupon usage recording failed for transaction {} (non-fatal): {}", txnId, e.getMessage());
+                        }
+                    }
+                });
+            } else {
+                // No active transaction — call directly (unit test or non-transactional context)
+                try {
+                    couponUsageRecorder.recordUsage(couponId, txnId, shopOwnerId, discountAmount);
+                } catch (Exception e) {
+                    log.error("Coupon usage recording failed for transaction {} (non-fatal): {}", txnId, e.getMessage());
+                }
+            }
+        }
     }
 
-    private void createTransactionRecord(Payment payment, SubscriptionPlan plan, Long subscriptionId) {
+    private SubscriptionTransaction createTransactionRecord(Payment payment, SubscriptionPlan plan, Long subscriptionId) {
+        // Idempotency: transactionId is uniquely constrained (uk_sub_txn_id). A
+        // replayed gateway callback must reuse the existing record rather than
+        // attempting a second insert.
+        var existing = transactionRepository.findByTransactionId(payment.getTransactionUuid());
+        if (existing.isPresent()) {
+            log.info("SubscriptionTransaction already exists for payment {} — reusing id={}",
+                    payment.getTransactionUuid(), existing.get().getId());
+            return existing.get();
+        }
+
         SubscriptionTransaction transaction = SubscriptionTransaction.builder()
                 .transactionId(payment.getTransactionUuid())
                 .subscriptionId(subscriptionId)
@@ -536,7 +659,9 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
                 .plan(plan)
                 .amount(payment.getAmount())
                 .tax(payment.getTaxAmount())
-                .discount(BigDecimal.ZERO)
+                .couponId(payment.getCouponId())
+                .couponCodeSnapshot(payment.getCouponCodeSnapshot())
+                .discount(payment.getDiscountAmount() != null ? payment.getDiscountAmount() : BigDecimal.ZERO)
                 .finalAmount(payment.getTotalAmount())
                 .paymentMethod(payment.getPaymentMethod() != null ? payment.getPaymentMethod() : "ESEWA")
                 .gateway(payment.getGateway())
@@ -544,8 +669,9 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
                 .invoiceNumber(payment.getInvoiceNumber())
                 .transactionDate(payment.getPaidAt() != null ? payment.getPaidAt() : LocalDateTime.now())
                 .build();
-        transactionRepository.save(transaction);
+        transaction = transactionRepository.save(transaction);
         log.info("SubscriptionTransaction created for payment {}", payment.getTransactionUuid());
+        return transaction;
     }
 
     private LocalDateTime calculateEndDate(LocalDateTime startDate, String billingCycle) {
@@ -638,5 +764,5 @@ public class EsewaPaymentServiceImpl implements EsewaPaymentService {
     }
 
     // Internal class for eSewa status response
-    private record EsewaStatusResult(String status, String refId, String totalAmount, String productCode) {}
+    public record EsewaStatusResult(String status, String refId, String totalAmount, String productCode) {}
 }

@@ -189,10 +189,6 @@ public class SubscriptionPlanServiceImpl implements SubscriptionPlanService {
             throw new PlanNotAvailableException("Plan is already published");
         }
 
-        if (plan.getStatus() == PlanStatus.ARCHIVED) {
-            throw new PlanNotAvailableException("Cannot publish an archived plan");
-        }
-
         if (plan.getStatus() == PlanStatus.DISABLED) {
             throw new PlanNotAvailableException("Cannot publish a disabled plan");
         }

@@ -128,4 +128,17 @@ public class AdminPublicVehicleListingController {
             return handleException(e);
         }
     }
+
+    @PostMapping("/{id}/unpublish")
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<?> unpublish(
+            @PathVariable Long id,
+            @RequestBody(required = false) PublicVehicleListingActionDto action) {
+        try {
+            PublicVehicleListingAdminDto listing = listingService.unpublishListing(id, action != null ? action : new PublicVehicleListingActionDto());
+            return ResponseEntity.ok(listing);
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
 }

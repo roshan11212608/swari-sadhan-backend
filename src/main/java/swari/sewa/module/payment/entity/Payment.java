@@ -90,6 +90,27 @@ public class Payment {
     @Column(name = "product_code", length = 50)
     private String productCode;
 
+    // ===== Plan Snapshot (frozen at payment activation time) =====
+    // These capture the plan name and subscription period at the moment the
+    // payment was completed. The Subscription entity is reused on
+    // renewal/upgrade (its snapshots are overwritten), so these Payment-level
+    // snapshots are the only historically immutable record of what plan the
+    // user had at each billing period.
+
+    @Column(name = "plan_name_snapshot", length = 100)
+    private String planNameSnapshot;
+
+    @Column(name = "subscription_start_date_snapshot")
+    private LocalDateTime subscriptionStartDateSnapshot;
+
+    @Column(name = "subscription_end_date_snapshot")
+    private LocalDateTime subscriptionEndDateSnapshot;
+
+    // Total vehicle limit at the time of this payment (includes carry-forward).
+    // Used by the Previous Plan UI to show the limit that was in effect.
+    @Column(name = "vehicle_limit_snapshot")
+    private Integer vehicleLimitSnapshot;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

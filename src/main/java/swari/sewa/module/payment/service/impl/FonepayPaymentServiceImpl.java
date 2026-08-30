@@ -26,6 +26,7 @@ import swari.sewa.module.subscription.repository.SubscriptionTransactionReposito
 import swari.sewa.module.subscription.service.InvoiceService;
 import swari.sewa.module.subscription.service.SubscriptionPlanService;
 import swari.sewa.module.subscription.service.SubscriptionSettingsService;
+import swari.sewa.module.vehicle.repository.VehicleRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,6 +34,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -52,6 +54,7 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
     private final PaymentEmailService paymentEmailService;
     private final PaymentExpenseSyncService paymentExpenseSyncService;
     private final SubscriptionSettingsService settingsService;
+    private final VehicleRepository vehicleRepository;
 
     private static final DateTimeFormatter PRN_FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
@@ -230,23 +233,127 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
 
     private void activateSubscription(Payment payment) {
         SubscriptionPlan plan = planService.getPlanEntity(payment.getSubscriptionPlanId());
+
+        // Expire any existing TRIAL subscription so the unique constraint
+        // uk_subscriptions_active_owner (one ACTIVE-or-TRIAL per owner) is
+        // not violated when the new ACTIVE subscription is inserted.
+        subscriptionRepository.findTrialByShopOwnerId(payment.getShopOwnerId())
+                .ifPresent(trial -> {
+                    trial.setStatus(SubscriptionStatus.EXPIRED);
+                    subscriptionRepository.saveAndFlush(trial);
+                    log.info("Expired trial subscription {} for shop_owner={} upon paid activation",
+                            trial.getId(), payment.getShopOwnerId());
+                });
+
+        // Check if there's already an ACTIVE subscription (e.g. user is renewing
+        // or upgrading). If so, renew/extend it instead of creating a new one.
+        List<Subscription> existingActive = subscriptionRepository
+                .findByShopOwnerIdAndStatus(payment.getShopOwnerId(), SubscriptionStatus.ACTIVE);
+
         LocalDateTime startDate = LocalDateTime.now();
         LocalDateTime endDate = calculateEndDate(startDate, payment.getBillingCycle());
 
-        Subscription subscription = Subscription.builder()
-                .shopOwnerId(payment.getShopOwnerId())
-                .plan(plan)
-                .startDate(startDate)
-                .endDate(endDate)
-                .renewalDate(endDate)
-                .status(SubscriptionStatus.ACTIVE)
-                .autoRenewal(false)
-                .build();
+        // Snapshot plan details so later admin changes don't affect this subscription
+        // Same logic as EsewaPaymentServiceImpl: monthly vehicle limit × billing cycle months
+        Integer monthlyVehicleLimit = null;
+        if (plan.getRestrictions() != null) {
+            for (var r : plan.getRestrictions()) {
+                if (r.getMaxVehicles() != null) {
+                    monthlyVehicleLimit = r.getMaxVehicles();
+                    break;
+                }
+            }
+        }
+        Integer vehicleLimit = monthlyVehicleLimit != null
+                ? monthlyVehicleLimit * getMonthsInCycle(payment.getBillingCycle())
+                : null;
 
-        subscription = subscriptionRepository.save(subscription);
+        Subscription subscription;
+        if (!existingActive.isEmpty()) {
+            // Renew/extend the existing ACTIVE subscription
+            subscription = existingActive.get(0);
+
+            // === Vehicle allowance rollover calculation ===
+            // Count vehicles created after the old currentPeriodStart (all vehicles
+            // from the old period). At this point, no new-period vehicles exist yet.
+            int carriedForward = 0;
+            if (subscription.getVehicleLimitSnapshot() != null && subscription.getCurrentPeriodStart() != null) {
+                // Truncate to seconds to match MySQL DATETIME precision
+                LocalDateTime oldPeriodStart = subscription.getCurrentPeriodStart()
+                        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+                long oldUsed = vehicleRepository.countByShop_ShopOwner_IdAndCreatedAtAfter(
+                        payment.getShopOwnerId(), oldPeriodStart);
+                int oldLimit = subscription.getVehicleLimitSnapshot();
+                carriedForward = Math.max(0, oldLimit - (int) oldUsed);
+                log.info("Rollover: oldPeriodStart={}, oldLimit={}, oldUsed={}, carriedForward={}",
+                        oldPeriodStart, oldLimit, oldUsed, carriedForward);
+            }
+
+            // If the current subscription hasn't expired yet, extend from its end date;
+            // otherwise, start from now.
+            LocalDateTime baseDate = subscription.getEndDate() != null
+                    && subscription.getEndDate().isAfter(startDate)
+                    ? subscription.getEndDate()
+                    : startDate;
+            endDate = calculateEndDate(baseDate, payment.getBillingCycle());
+
+            // Total vehicle limit = new plan limit + carried-forward unused allowance
+            int totalVehicleLimit = vehicleLimit != null ? vehicleLimit + carriedForward : null;
+
+            // startDate stays as the ORIGINAL subscription start (preserves history).
+            // currentPeriodStart is set to NOW (the renewal purchase date) so the new
+            // vehicle allowance takes effect immediately.
+            subscription.setPlan(plan);
+            subscription.setEndDate(endDate);
+            subscription.setRenewalDate(endDate);
+            subscription.setStatus(SubscriptionStatus.ACTIVE);
+            subscription.setCurrentPeriodStart(startDate);
+            subscription.setPlanNameSnapshot(plan.getName());
+            subscription.setPlanDescriptionSnapshot(plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription());
+            subscription.setPlanIconSnapshot(plan.getIcon());
+            subscription.setPlanThemeColorSnapshot(plan.getThemeColor());
+            subscription.setVehicleLimitSnapshot(totalVehicleLimit);
+            subscription.setNewPlanVehicleLimit(vehicleLimit);
+            subscription.setCarriedForwardVehicleLimit(carriedForward);
+            subscription.setPricePaid(payment.getAmount());
+            subscription.setBillingCycleSnapshot(payment.getBillingCycle());
+            subscription = subscriptionRepository.saveAndFlush(subscription);
+            log.info("Subscription {} renewed/extended for shop_owner={} until {} (period starts {}, totalLimit={} = {}+{})",
+                    subscription.getId(), payment.getShopOwnerId(), endDate, baseDate, totalVehicleLimit, vehicleLimit, carriedForward);
+        } else {
+            subscription = Subscription.builder()
+                    .shopOwnerId(payment.getShopOwnerId())
+                    .plan(plan)
+                    .startDate(startDate)
+                    .currentPeriodStart(startDate)
+                    .endDate(endDate)
+                    .renewalDate(endDate)
+                    .status(SubscriptionStatus.ACTIVE)
+                    .autoRenewal(false)
+                    .planNameSnapshot(plan.getName())
+                    .planDescriptionSnapshot(plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription())
+                    .planIconSnapshot(plan.getIcon())
+                    .planThemeColorSnapshot(plan.getThemeColor())
+                    .vehicleLimitSnapshot(vehicleLimit)
+                    .newPlanVehicleLimit(vehicleLimit)
+                    .carriedForwardVehicleLimit(0)
+                    .pricePaid(payment.getAmount())
+                    .billingCycleSnapshot(payment.getBillingCycle())
+                    .build();
+            subscription = subscriptionRepository.save(subscription);
+            log.info("Subscription {} activated for shop_owner={}", subscription.getId(), payment.getShopOwnerId());
+        }
+
         payment.setSubscriptionId(subscription.getId());
+        // Freeze plan name and subscription period on the payment so that
+        // later renewals/upgrades (which overwrite the Subscription row's
+        // snapshots) do not destroy the historical record of what plan the
+        // user had at this billing period.
+        payment.setPlanNameSnapshot(plan.getName());
+        payment.setSubscriptionStartDateSnapshot(subscription.getCurrentPeriodStart());
+        payment.setSubscriptionEndDateSnapshot(subscription.getEndDate());
+        payment.setVehicleLimitSnapshot(subscription.getVehicleLimitSnapshot());
         paymentRepository.save(payment);
-        log.info("Subscription {} activated for shop_owner={}", subscription.getId(), payment.getShopOwnerId());
 
         // Create SubscriptionTransaction record for Super Admin transactions page
         createTransactionRecord(payment, plan, subscription.getId());
@@ -258,7 +365,17 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
         paymentExpenseSyncService.createSubscriptionExpense(payment, plan);
     }
 
-    private void createTransactionRecord(Payment payment, SubscriptionPlan plan, Long subscriptionId) {
+    private SubscriptionTransaction createTransactionRecord(Payment payment, SubscriptionPlan plan, Long subscriptionId) {
+        // Idempotency: transactionId is uniquely constrained (uk_sub_txn_id). A
+        // replayed gateway callback must reuse the existing record rather than
+        // attempting a second insert.
+        var existing = transactionRepository.findByTransactionId(payment.getTransactionUuid());
+        if (existing.isPresent()) {
+            log.info("SubscriptionTransaction already exists for payment {} — reusing id={}",
+                    payment.getTransactionUuid(), existing.get().getId());
+            return existing.get();
+        }
+
         SubscriptionTransaction transaction = SubscriptionTransaction.builder()
                 .transactionId(payment.getTransactionUuid())
                 .subscriptionId(subscriptionId)
@@ -266,7 +383,9 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
                 .plan(plan)
                 .amount(payment.getAmount())
                 .tax(payment.getTaxAmount())
-                .discount(BigDecimal.ZERO)
+                .couponId(payment.getCouponId())
+                .couponCodeSnapshot(payment.getCouponCodeSnapshot())
+                .discount(payment.getDiscountAmount() != null ? payment.getDiscountAmount() : BigDecimal.ZERO)
                 .finalAmount(payment.getTotalAmount())
                 .paymentMethod(payment.getPaymentMethod() != null ? payment.getPaymentMethod() : "FONEPAY")
                 .gateway(payment.getGateway())
@@ -274,8 +393,9 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
                 .invoiceNumber(payment.getInvoiceNumber())
                 .transactionDate(payment.getPaidAt() != null ? payment.getPaidAt() : LocalDateTime.now())
                 .build();
-        transactionRepository.save(transaction);
+        transaction = transactionRepository.save(transaction);
         log.info("SubscriptionTransaction created for payment {}", payment.getTransactionUuid());
+        return transaction;
     }
 
     private LocalDateTime calculateEndDate(LocalDateTime startDate, String billingCycle) {
@@ -287,6 +407,22 @@ public class FonepayPaymentServiceImpl implements FonepayPaymentService {
             case "half_yearly": return startDate.plusMonths(6);
             case "yearly": return startDate.plusYears(1);
             default: return startDate.plusMonths(1);
+        }
+    }
+
+    /**
+     * Returns the number of months in a billing cycle.
+     * Used to calculate the total vehicle limit: monthlyLimit × monthsInCycle.
+     */
+    private int getMonthsInCycle(String billingCycle) {
+        if (billingCycle == null) return 1;
+        switch (billingCycle.toLowerCase()) {
+            case "monthly": return 1;
+            case "quarterly": return 3;
+            case "halfyearly":
+            case "half_yearly": return 6;
+            case "yearly": return 12;
+            default: return 1;
         }
     }
 

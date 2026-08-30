@@ -110,6 +110,7 @@ public class TrialSubscriptionService {
                 .plan(plan)
                 .trialId(trial.getId())
                 .startDate(now)
+                .currentPeriodStart(now)
                 .endDate(endDate)
                 .renewalDate(endDate)
                 .status(SubscriptionStatus.TRIAL)

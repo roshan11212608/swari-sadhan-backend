@@ -7,6 +7,7 @@ public enum PublicVehicleListingStatus {
     CHANGES_REQUESTED,
     APPROVED,
     PUBLISHED,
+    UNPUBLISHED,
     SOLD,
     REJECTED,
     CANCELLED

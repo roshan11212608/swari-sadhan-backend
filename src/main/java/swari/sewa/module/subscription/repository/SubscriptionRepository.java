@@ -61,6 +61,21 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     List<Object[]> countSubscribersByPlan();
 
     /**
+     * Raw inputs for MRR: for each ACTIVE (paid, non-trial) subscription return
+     * the price actually paid and the billing cycle it was purchased on. The
+     * caller normalises each row to a monthly figure. TRIAL subscriptions are
+     * excluded because they contribute no recurring revenue.
+     *
+     * Returns rows of: billingCycleSnapshot, summedPricePaid
+     */
+    @Query("SELECT s.billingCycleSnapshot, COALESCE(SUM(s.pricePaid), 0) " +
+           "FROM Subscription s " +
+           "WHERE s.status = swari.sewa.module.subscription.enums.SubscriptionStatus.ACTIVE " +
+           "AND s.pricePaid IS NOT NULL " +
+           "GROUP BY s.billingCycleSnapshot")
+    List<Object[]> sumActivePricePaidByBillingCycle();
+
+    /**
      * Find expired trial subscriptions within the last N days where the shop owner
      * has NOT purchased a paid (ACTIVE) subscription afterward.
      */
@@ -74,4 +89,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
            ") " +
            "ORDER BY s.endDate DESC")
     List<Subscription> findRecentlyExpiredTrialsWithoutSubscription(@Param("since") LocalDateTime since);
+
+    @Query("SELECT FUNCTION('DATE_FORMAT', s.startDate, '%Y-%m') as month, " +
+           "COUNT(s) " +
+           "FROM Subscription s " +
+           "WHERE s.status IN (swari.sewa.module.subscription.enums.SubscriptionStatus.ACTIVE, swari.sewa.module.subscription.enums.SubscriptionStatus.TRIAL) " +
+           "AND s.startDate <= FUNCTION('LAST_DAY', :endDate) " +
+           "AND (s.endDate >= FUNCTION('DATE', CONCAT(FUNCTION('DATE_FORMAT', s.startDate, '%Y-%m'), '-01')) OR s.endDate IS NULL) " +
+           "GROUP BY FUNCTION('DATE_FORMAT', s.startDate, '%Y-%m') ORDER BY month")
+    List<Object[]> getActiveSubscribersTrendByMonth(@Param("endDate") LocalDateTime endDate);
 }

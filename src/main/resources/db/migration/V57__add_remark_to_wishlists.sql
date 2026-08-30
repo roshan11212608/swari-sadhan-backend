@@ -1,0 +1,1 @@
+ALTER TABLE wishlists ADD COLUMN remark TEXT NULL;

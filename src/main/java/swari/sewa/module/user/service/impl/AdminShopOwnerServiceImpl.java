@@ -585,7 +585,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                     vehicleData.put("id", vehicle.getId());
                     vehicleData.put("title", vehicle.getTitle());
                     vehicleData.put("status", vehicle.getStatus());
-                    vehicleData.put("price", vehicle.getPrice());
+                    vehicleData.put("price", vehicle.getSellingPrice());
                     vehicleData.put("views", vehicle.getViewCount());
                     vehicleData.put("createdAt", vehicle.getCreatedAt());
                     return vehicleData;

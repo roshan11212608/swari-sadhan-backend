@@ -13,5 +13,5 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     boolean existsByTransactionUuid(String transactionUuid);
 
-    List<Payment> findByShopOwnerIdAndStatusOrderByPaidAtDesc(Long shopOwnerId, PaymentStatus status);
+    List<Payment> findByShopOwnerIdAndStatusOrderByPaidAtDescIdDesc(Long shopOwnerId, PaymentStatus status);
 }

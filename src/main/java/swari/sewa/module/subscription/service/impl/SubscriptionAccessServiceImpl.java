@@ -31,11 +31,15 @@ import java.util.Optional;
  * subscription period. For example, a plan with a monthly limit of 10 and a
  * yearly billing cycle gives a total limit of 120 vehicles for the year.
  *
- * <p>Counts vehicles added AFTER the subscription started
- * (createdAt >= subscription.startDate). Vehicles that existed before the
- * subscription are grandfathered and don't count against the limit.
- * Sold vehicles are excluded from the add count (selling frees a slot for
- * adding new vehicles). Selling is always allowed regardless of the add limit.
+ * <p>Counts vehicles added AFTER the current billing period started
+ * (createdAt >= subscription.currentPeriodStart). Vehicles that existed before
+ * the subscription are grandfathered and don't count against the limit.
+ * Sold vehicles are still counted — selling does NOT free up a slot.
+ * Selling is always allowed regardless of the add limit.
+ *
+ * <p>On renewal, currentPeriodStart moves to the old endDate so the new
+ * period gets a fresh vehicle allowance. startDate preserves the original
+ * subscription creation date for historical accuracy.
  */
 @Service
 @RequiredArgsConstructor
@@ -92,8 +96,8 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
         if (maxVehicles == null) {
             return true; // null limit = unlimited
         }
-        // Count only vehicles added after subscription started (grandfathered vehicles excluded)
-        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getStartDate());
+        // Count vehicles added after the current billing period started
+        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getCurrentPeriodStart());
         return currentCount < maxVehicles;
     }
 
@@ -115,8 +119,8 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
             return; // null limit = unlimited
         }
 
-        // Count only vehicles added after subscription started (grandfathered vehicles excluded)
-        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getStartDate());
+        // Count vehicles added after the current billing period started
+        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getCurrentPeriodStart());
         if (currentCount >= maxVehicles) {
             String planName = sub.getPlanNameSnapshot() != null ? sub.getPlanNameSnapshot()
                     : (sub.getPlan() != null ? sub.getPlan().getName() : null);
@@ -147,6 +151,10 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
                     .hasAccess(false)
                     .trialEndDate(null)
                     .trialDaysRemaining(null)
+                    .startDate(null)
+                    .endDate(null)
+                    .billingCycle(null)
+                    .daysRemaining(null)
                     .build();
         }
 
@@ -155,12 +163,16 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
         String planName = sub.getPlanNameSnapshot() != null ? sub.getPlanNameSnapshot()
                 : (sub.getPlan() != null ? sub.getPlan().getName() : null);
 
-        // Use snapshotted vehicle limit (frozen at purchase time)
+        // Use snapshotted vehicle limit (frozen at purchase time, includes carry-forward)
         Integer vehicleLimit = sub.getVehicleLimitSnapshot();
         boolean unlimited = (vehicleLimit == null);
 
-        // Count only vehicles added after subscription started (grandfathered vehicles excluded)
-        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getStartDate());
+        // Rollover detail fields
+        Integer newPlanVehicleLimit = sub.getNewPlanVehicleLimit();
+        Integer carriedForward = sub.getCarriedForwardVehicleLimit();
+
+        // Count vehicles added after the current billing period started
+        long currentCount = getVehiclesSinceSubscription(shopOwnerId, sub.getCurrentPeriodStart());
 
         boolean canAdd = unlimited ? true : currentCount < vehicleLimit;
         Integer remaining = unlimited ? null : Math.max(0, vehicleLimit - (int) currentCount);
@@ -173,6 +185,20 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
             trialDaysRemaining = (int) Math.max(0, days);
         }
 
+        // Common date fields for both ACTIVE and TRIAL
+        // startDate = original subscription start (for history)
+        // currentPeriodStart = start of current billing period (for display)
+        String startDate = sub.getCurrentPeriodStart() != null
+                ? sub.getCurrentPeriodStart().toString()
+                : (sub.getStartDate() != null ? sub.getStartDate().toString() : null);
+        String endDate = sub.getEndDate() != null ? sub.getEndDate().toString() : null;
+        String billingCycle = sub.getBillingCycleSnapshot() != null ? sub.getBillingCycleSnapshot() : null;
+        Integer daysRemaining = null;
+        if (sub.getEndDate() != null) {
+            long days = ChronoUnit.DAYS.between(LocalDateTime.now(), sub.getEndDate());
+            daysRemaining = (int) Math.max(0, days);
+        }
+
         return VehicleUsageResponse.builder()
                 .subscriptionStatus(status)
                 .planName(planName)
@@ -183,6 +209,16 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
                 .hasAccess(true)
                 .trialEndDate(trialEndDate)
                 .trialDaysRemaining(trialDaysRemaining)
+                .startDate(startDate)
+                .endDate(endDate)
+                .billingCycle(billingCycle)
+                .daysRemaining(daysRemaining)
+                .pricePaid(sub.getPricePaid())
+                .newPlanVehicleLimit(newPlanVehicleLimit)
+                .carriedForwardVehicleLimit(carriedForward)
+                .totalVehicleLimit(vehicleLimit)
+                .vehiclesUsed(currentCount)
+                .vehiclesRemaining(remaining)
                 .build();
     }
 
@@ -199,9 +235,10 @@ public class SubscriptionAccessServiceImpl implements SubscriptionAccessService 
     }
 
     /**
-     * Count vehicles added AFTER the subscription started (includes SOLD).
-     * Vehicles that existed before the subscription are grandfathered and
-     * don't count against the plan's vehicle limit.
+     * Count vehicles added AFTER the given date (includes SOLD).
+     * Used with currentPeriodStart to count vehicles against the current
+     * billing period's allowance. Vehicles that existed before the
+     * subscription are grandfathered and don't count against the limit.
      *
      * The vehicle limit is the plan's monthly limit × billing cycle months.
      * Example: monthly limit 10 + yearly cycle → total limit 120.

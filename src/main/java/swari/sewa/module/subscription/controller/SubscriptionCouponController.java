@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import swari.sewa.common.dto.ApiResponse;
 import swari.sewa.module.subscription.dto.*;
 import swari.sewa.module.subscription.service.SubscriptionCouponService;
+
+import java.util.List;
 import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 import jakarta.validation.Valid;
@@ -74,6 +76,13 @@ public class SubscriptionCouponController {
     public ResponseEntity<ApiResponse<CouponResponse>> toggleCoupon(@PathVariable Long id) {
         CouponResponse coupon = couponService.toggleCoupon(id, getCurrentAdminUserId());
         return ResponseEntity.ok(ApiResponse.success(coupon, "Coupon toggled successfully"));
+    }
+
+    @GetMapping("/{id}/usages")
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<ApiResponse<List<CouponUsageResponse>>> getCouponUsages(@PathVariable Long id) {
+        List<CouponUsageResponse> usages = couponService.getCouponUsages(id);
+        return ResponseEntity.ok(ApiResponse.success(usages, "Coupon usages retrieved successfully"));
     }
 
     private Long getCurrentAdminUserId() {

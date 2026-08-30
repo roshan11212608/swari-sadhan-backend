@@ -21,6 +21,8 @@ public interface SubscriptionCouponUsageRepository extends JpaRepository<Subscri
 
     List<SubscriptionCouponUsage> findByCouponIdAndShopOwnerId(Long couponId, Long shopOwnerId);
 
+    List<SubscriptionCouponUsage> findByCouponIdOrderByUsedAtDesc(Long couponId);
+
     Optional<SubscriptionCouponUsage> findByCouponIdAndTransactionId(Long couponId, Long transactionId);
 
     /**

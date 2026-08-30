@@ -11,6 +11,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import swari.sewa.module.user.entity.User;
+
+import java.math.BigDecimal;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.module.vehicle.dto.PublicVehicleListingRequestDto;
 import swari.sewa.module.vehicle.dto.PublicVehicleListingResponseDto;
@@ -61,10 +63,13 @@ public class PublicVehicleListingController {
     @GetMapping
     public ResponseEntity<?> getPublicListings(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "12") int size) {
+            @RequestParam(defaultValue = "12") int size,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String brand,
+            @RequestParam(required = false) String city) {
         try {
             Pageable pageable = PageRequest.of(page, size);
-            Page<PublicVehicleListingResponseDto> listings = listingService.getPublicListings(pageable);
+            Page<PublicVehicleListingResponseDto> listings = listingService.getPublicListings(pageable, maxPrice, brand, city);
             return ResponseEntity.ok(listings);
         } catch (Exception e) {
             return handleException(e);

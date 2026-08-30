@@ -16,8 +16,11 @@ import swari.sewa.module.payment.dto.CurrentSubscriptionResponse;
 import swari.sewa.module.payment.dto.BillingHistoryItem;
 import swari.sewa.module.payment.dto.PaymentResponse;
 import swari.sewa.module.payment.exception.PaymentException;
+import swari.sewa.common.util.HtmlEscape;
 import swari.sewa.module.payment.service.EsewaPaymentService;
+import swari.sewa.module.payment.service.FinanceAuditService;
 import swari.sewa.module.payment.service.FonepayPaymentService;
+import swari.sewa.module.payment.service.InvoiceAccessTokenService;
 import swari.sewa.module.subscription.service.SubscriptionSettingsService;
 import swari.sewa.module.user.entity.ShopOwner;
 import swari.sewa.module.user.repository.ShopOwnerRepository;
@@ -25,6 +28,7 @@ import swari.sewa.module.user.repository.ShopOwnerRepository;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Base64;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/payments")
@@ -44,6 +48,8 @@ public class PaymentController {
     private final swari.sewa.module.vehicle.repository.VehicleRepository vehicleRepository;
     private final swari.sewa.module.enquiry.repository.EnquiryRepository enquiryRepository;
     private final SubscriptionSettingsService settingsService;
+    private final InvoiceAccessTokenService invoiceAccessTokenService;
+    private final FinanceAuditService financeAuditService;
 
     /**
      * QR code payment page — renders an auto-submitting HTML form to eSewa.
@@ -276,6 +282,21 @@ public class PaymentController {
     }
 
     /**
+     * Calculate an approximate end date from a start date and billing cycle.
+     * Used as a fallback for legacy payments that don't have date snapshots.
+     */
+    private java.time.LocalDateTime calculateApproximateEndDate(java.time.LocalDateTime startDate, String billingCycle) {
+        if (billingCycle == null) return startDate.plusMonths(1);
+        switch (billingCycle.toLowerCase()) {
+            case "monthly": return startDate.plusMonths(1);
+            case "quarterly": return startDate.plusMonths(3);
+            case "half-yearly": case "half_yearly": return startDate.plusMonths(6);
+            case "yearly": return startDate.plusMonths(12);
+            default: return startDate.plusMonths(1);
+        }
+    }
+
+    /**
      * Simple JSON field extractor — avoids adding Jackson parsing for the eSewa response.
      */
     private String extractJsonField(String json, String fieldName) {
@@ -410,7 +431,7 @@ public class PaymentController {
         var plan = subscription.getPlan();
 
         // Find the successful payment for this subscription to get billing cycle and price
-        var payments = paymentRepository.findByShopOwnerIdAndStatusOrderByPaidAtDesc(
+        var payments = paymentRepository.findByShopOwnerIdAndStatusOrderByPaidAtDescIdDesc(
                 shopOwnerId,
                 swari.sewa.module.payment.enums.PaymentStatus.SUCCESS
         );
@@ -456,9 +477,13 @@ public class PaymentController {
         }
 
         // Fetch actual usage counts from the database
-        // Count only vehicles added after subscription started (grandfathered vehicles excluded)
+        // Count vehicles added in the current billing period (using currentPeriodStart,
+        // not the original startDate, so renewals/upgrades get a fresh count)
+        java.time.LocalDateTime periodStart = subscription.getCurrentPeriodStart() != null
+                ? subscription.getCurrentPeriodStart()
+                : subscription.getStartDate();
         int vehiclesUsed = (int) vehicleRepository.countByShop_ShopOwner_IdAndCreatedAtAfter(
-                shopOwnerId, subscription.getStartDate());
+                shopOwnerId, periodStart);
         int enquiriesUsed = (int) enquiryRepository.countByShop_ShopOwner_Id(shopOwnerId);
         int featuredUsed = (int) vehicleRepository.countFeaturedByShop_ShopOwner_Id(shopOwnerId);
 
@@ -468,6 +493,66 @@ public class PaymentController {
                 : (plan.getShortDescription() != null ? plan.getShortDescription() : plan.getDescription());
         String snapshotIcon = subscription.getPlanIconSnapshot() != null ? subscription.getPlanIconSnapshot() : plan.getIcon();
         String snapshotThemeColor = subscription.getPlanThemeColorSnapshot() != null ? subscription.getPlanThemeColorSnapshot() : plan.getThemeColor();
+
+        // Extract previous plan info from the second-most-recent SUCCESSFUL payment.
+        // Each successful payment has immutable snapshot fields (planNameSnapshot,
+        // subscriptionStartDateSnapshot, subscriptionEndDateSnapshot) that were
+        // frozen at activation time. Unlike the Subscription entity (which is
+        // reused and overwritten on renewal/upgrade), these Payment-level
+        // snapshots are historically immutable.
+        String previousPlanName = null;
+        java.math.BigDecimal previousPlanPrice = null;
+        String previousPlanBillingCycle = null;
+        java.time.LocalDateTime previousPlanStartDate = null;
+        java.time.LocalDateTime previousPlanEndDate = null;
+        Integer previousPlanVehicleLimit = null;
+        Integer previousPlanVehiclesUsed = null;
+        Integer previousPlanUnused = null;
+        boolean hasPreviousPlan = false;
+
+        if (payments.size() >= 2) {
+            var previousPayment = payments.get(1);
+            // Use the Payment's own snapshot (frozen at activation time)
+            previousPlanName = previousPayment.getPlanNameSnapshot();
+            // Fall back to live plan lookup only if snapshot is null (legacy payments)
+            if (previousPlanName == null) {
+                try {
+                    var prevPlan = planService.getPlanEntity(previousPayment.getSubscriptionPlanId());
+                    if (prevPlan != null) previousPlanName = prevPlan.getName();
+                } catch (Exception e) { /* plan may be deleted */ }
+            }
+            if (previousPlanName != null) {
+                previousPlanPrice = previousPayment.getTotalAmount();
+                previousPlanBillingCycle = previousPayment.getBillingCycle();
+                previousPlanStartDate = previousPayment.getSubscriptionStartDateSnapshot();
+                previousPlanEndDate = previousPayment.getSubscriptionEndDateSnapshot();
+                previousPlanVehicleLimit = previousPayment.getVehicleLimitSnapshot();
+                // Fallback for legacy payments (created before V54 snapshot columns):
+                // use paidAt as approximate start, and calculate end from billing cycle
+                if (previousPlanStartDate == null && previousPayment.getPaidAt() != null) {
+                    previousPlanStartDate = previousPayment.getPaidAt();
+                }
+                if (previousPlanEndDate == null && previousPlanStartDate != null && previousPlanBillingCycle != null) {
+                    previousPlanEndDate = calculateApproximateEndDate(previousPlanStartDate, previousPlanBillingCycle);
+                }
+                // Calculate vehicles used during the previous period
+                if (previousPlanStartDate != null) {
+                    java.time.LocalDateTime prevEnd = previousPlanEndDate != null ? previousPlanEndDate : java.time.LocalDateTime.now();
+                    previousPlanVehiclesUsed = (int) vehicleRepository.countByShop_ShopOwner_IdAndCreatedAtBetween(
+                            shopOwnerId, previousPlanStartDate, prevEnd);
+                    if (previousPlanVehicleLimit != null) {
+                        previousPlanUnused = Math.max(0, previousPlanVehicleLimit - previousPlanVehiclesUsed);
+                    }
+                }
+                hasPreviousPlan = true;
+            }
+        }
+
+        // Rollover fields from the subscription
+        Integer newPlanVehicleLimit = subscription.getNewPlanVehicleLimit();
+        Integer carriedForwardVehicleLimit = subscription.getCarriedForwardVehicleLimit();
+        Integer totalVehicleLimit = vehicleLimit;
+        Integer vehiclesRemaining = vehicleLimit != null ? Math.max(0, vehicleLimit - vehiclesUsed) : null;
 
         CurrentSubscriptionResponse response = CurrentSubscriptionResponse.builder()
                 .subscriptionId(subscription.getId())
@@ -491,9 +576,22 @@ public class PaymentController {
                 .vehiclesUsed(vehiclesUsed)
                 .enquiriesUsed(enquiriesUsed)
                 .featuredUsed(featuredUsed)
+                .newPlanVehicleLimit(newPlanVehicleLimit)
+                .carriedForwardVehicleLimit(carriedForwardVehicleLimit)
+                .totalVehicleLimit(totalVehicleLimit)
+                .vehiclesRemaining(vehiclesRemaining)
                 .invoiceNumber(invoiceNumber)
                 .paymentGateway(gateway)
                 .transactionUuid(transactionUuid)
+                .previousPlanName(previousPlanName)
+                .previousPlanPrice(previousPlanPrice)
+                .previousPlanBillingCycle(previousPlanBillingCycle)
+                .previousPlanStartDate(previousPlanStartDate)
+                .previousPlanEndDate(previousPlanEndDate)
+                .previousPlanVehicleLimit(previousPlanVehicleLimit)
+                .previousPlanVehiclesUsed(previousPlanVehiclesUsed)
+                .previousPlanUnused(previousPlanUnused)
+                .hasPreviousPlan(hasPreviousPlan)
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success(response, "Current subscription retrieved"));
@@ -514,7 +612,7 @@ public class PaymentController {
 
         log.info("Fetching billing history for shop_owner={}", shopOwnerId);
 
-        var payments = paymentRepository.findByShopOwnerIdAndStatusOrderByPaidAtDesc(
+        var payments = paymentRepository.findByShopOwnerIdAndStatusOrderByPaidAtDescIdDesc(
                 shopOwnerId,
                 swari.sewa.module.payment.enums.PaymentStatus.SUCCESS
         );
@@ -522,14 +620,19 @@ public class PaymentController {
         java.util.List<BillingHistoryItem> items = new java.util.ArrayList<>();
         for (var payment : payments) {
             String planName = "—";
-            // Prefer subscription snapshot (frozen at purchase time)
-            if (payment.getSubscriptionId() != null) {
+            // Prefer the Payment's own plan name snapshot (frozen at activation time,
+            // immutable across renewals/upgrades)
+            if (payment.getPlanNameSnapshot() != null) {
+                planName = payment.getPlanNameSnapshot();
+            }
+            // Fall back to subscription snapshot (legacy payments without planNameSnapshot)
+            if (planName.equals("—") && payment.getSubscriptionId() != null) {
                 var subOpt = subscriptionRepository.findById(payment.getSubscriptionId());
                 if (subOpt.isPresent() && subOpt.get().getPlanNameSnapshot() != null) {
                     planName = subOpt.get().getPlanNameSnapshot();
                 }
             }
-            // Fall back to live plan only if no snapshot
+            // Fall back to live plan only if no snapshot at all
             if (planName.equals("—")) {
                 try {
                     var plan = planService.getPlanEntity(payment.getSubscriptionPlanId());
@@ -561,41 +664,104 @@ public class PaymentController {
     // ===== Invoice Download =====
 
     /**
-     * Download/print invoice for a payment by transaction UUID.
-     * Returns a printable HTML page that the browser can save as PDF.
-     * Shop owner can only download their own invoices.
+     * Mint a short-lived, single-use token that authorises opening ONE invoice.
+     *
+     * <p>Called with the normal {@code Authorization} header. The returned token is
+     * what gets placed in the invoice URL, so the caller's real JWT never appears
+     * in browser history, referrer headers or access logs.
+     *
+     * <p>Ownership is validated here at issue time AND again at redeem time.
+     */
+    @PostMapping("/invoice/{transactionUuid}/access-token")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> createInvoiceAccessToken(
+            @PathVariable String transactionUuid) {
+
+        Long shopOwnerId = getCurrentShopOwnerId();
+        boolean isSuperAdmin = isCurrentUserSuperAdmin(null);
+
+        if (shopOwnerId == null && !isSuperAdmin) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Authentication required"));
+        }
+
+        var payment = paymentRepository.findByTransactionUuid(transactionUuid).orElse(null);
+        if (payment == null) {
+            return ResponseEntity.status(404).body(ApiResponse.error("Invoice not found"));
+        }
+        // Do not let the transaction UUID itself act as authorisation.
+        if (!isSuperAdmin && !payment.getShopOwnerId().equals(shopOwnerId)) {
+            log.warn("Shop owner {} requested an invoice token for {} owned by shop owner {} — denied",
+                    shopOwnerId, transactionUuid, payment.getShopOwnerId());
+            return ResponseEntity.status(403).body(ApiResponse.error("Access denied"));
+        }
+        if (payment.getStatus() != swari.sewa.module.payment.enums.PaymentStatus.SUCCESS) {
+            return ResponseEntity.status(409).body(ApiResponse.error("Invoice not available for this payment status"));
+        }
+
+        var subjectType = isSuperAdmin
+                ? InvoiceAccessTokenService.SubjectType.SUPERADMIN
+                : InvoiceAccessTokenService.SubjectType.SHOP_OWNER;
+        String accessToken = invoiceAccessTokenService.issue(transactionUuid, subjectType, shopOwnerId);
+
+        return ResponseEntity.ok(ApiResponse.success(
+                Map.of("accessToken", accessToken, "expiresInSeconds", invoiceAccessTokenService.ttlSeconds()),
+                "Invoice access token issued"));
+    }
+
+    /**
+     * Render a printable invoice.
+     *
+     * <p>Authorisation accepts either:
+     * <ul>
+     *   <li>a normal authenticated session (Authorization header), or</li>
+     *   <li>an {@code accessToken} minted by
+     *       {@link #createInvoiceAccessToken(String)}, which is scoped to this one
+     *       invoice, single-use and short-lived.</li>
+     * </ul>
+     *
+     * <p>A full JWT is deliberately NOT accepted as a query parameter.
      */
     @GetMapping("/invoice/{transactionUuid}")
     public void downloadInvoice(
             @PathVariable String transactionUuid,
-            @RequestParam(value = "token", required = false) String token,
+            @RequestParam(value = "accessToken", required = false) String accessToken,
             jakarta.servlet.http.HttpServletResponse httpServletResponse) throws IOException {
 
         Long shopOwnerId = getCurrentShopOwnerId();
+        boolean isSuperAdmin = isCurrentUserSuperAdmin(null);
 
-        // Fallback: if no auth from header, try token from query parameter
-        if (shopOwnerId == null && token != null && !token.isEmpty()) {
-            try {
-                shopOwnerId = resolveShopOwnerIdFromToken(token);
-            } catch (Exception e) {
-                log.warn("Failed to resolve shop owner from token query param");
+        // No header-based session (browser tab navigation) — fall back to the
+        // scoped invoice token. It is bound to this exact transactionUuid, so it
+        // cannot be replayed against a different invoice.
+        if (shopOwnerId == null && !isSuperAdmin) {
+            var access = invoiceAccessTokenService.redeem(accessToken, transactionUuid);
+            if (access == null) {
+                httpServletResponse.sendError(401, "Authentication required");
+                return;
             }
+            isSuperAdmin = access.subjectType() == InvoiceAccessTokenService.SubjectType.SUPERADMIN;
+            shopOwnerId = access.subjectId();
         }
 
-        if (shopOwnerId == null) {
+        if (shopOwnerId == null && !isSuperAdmin) {
             httpServletResponse.sendError(401, "Authentication required");
             return;
         }
 
-        log.info("Invoice download requested for transaction_uuid={} by shop_owner={}", transactionUuid, shopOwnerId);
+        log.info("Invoice render requested for transaction_uuid={} by shop_owner={} superAdmin={}",
+                transactionUuid, shopOwnerId, isSuperAdmin);
 
         try {
             // Find the payment
             swari.sewa.module.payment.entity.Payment payment = paymentRepository.findByTransactionUuid(transactionUuid)
-                    .orElseThrow(() -> new PaymentException("Payment not found"));
+                    .orElse(null);
+            if (payment == null) {
+                httpServletResponse.sendError(404, "Payment not found");
+                return;
+            }
 
-            // Security: shop owner can only download their own invoices
-            if (!payment.getShopOwnerId().equals(shopOwnerId)) {
+            // Security: shop owner can only download their own invoices; super admin can view any.
+            // Re-checked here even when a scoped token was used.
+            if (!isSuperAdmin && !payment.getShopOwnerId().equals(shopOwnerId)) {
                 log.warn("Shop owner {} attempted to download invoice {} belonging to shop owner {}",
                         shopOwnerId, transactionUuid, payment.getShopOwnerId());
                 httpServletResponse.sendError(403, "Access denied");
@@ -608,20 +774,33 @@ public class PaymentController {
                 return;
             }
 
-            // Get shop owner details
-            ShopOwner shopOwner = shopOwnerRepository.findById(shopOwnerId)
+            // Audit: who looked at whose invoice.
+            financeAuditService.recordInvoiceViewed(transactionUuid, payment.getInvoiceNumber(),
+                    payment.getShopOwnerId(), isSuperAdmin ? "SUPERADMIN" : "SHOP_OWNER", shopOwnerId);
+
+            // Get shop owner details (for super admin, use the payment's shop owner)
+            Long invoiceShopOwnerId = isSuperAdmin ? payment.getShopOwnerId() : shopOwnerId;
+            ShopOwner shopOwner = shopOwnerRepository.findById(invoiceShopOwnerId)
                     .orElseThrow(() -> new PaymentException("Shop owner not found"));
 
-            // Get plan details
-            var plan = planService.getPlanEntity(payment.getSubscriptionPlanId());
-
-            // Get subscription snapshot (plan details frozen at purchase time)
-            String snapshotPlanName = plan.getName();
-            if (payment.getSubscriptionId() != null) {
+            // Plan name for the invoice, most-immutable source first.
+            //
+            // The Payment-level snapshot is the only field that is never
+            // rewritten: the Subscription row is REUSED on renewal/upgrade and
+            // its own snapshots are overwritten at that point, and the live plan
+            // can be renamed or deleted outright. Preferring the subscription
+            // snapshot (as this previously did) meant a renewal could silently
+            // rewrite the plan name on an old invoice.
+            String snapshotPlanName = payment.getPlanNameSnapshot();
+            if (snapshotPlanName == null && payment.getSubscriptionId() != null) {
                 var subOpt = subscriptionRepository.findById(payment.getSubscriptionId());
                 if (subOpt.isPresent() && subOpt.get().getPlanNameSnapshot() != null) {
                     snapshotPlanName = subOpt.get().getPlanNameSnapshot();
                 }
+            }
+            if (snapshotPlanName == null) {
+                // Legacy payments predating the snapshot columns.
+                snapshotPlanName = planService.getPlanEntity(payment.getSubscriptionPlanId()).getName();
             }
 
             // Get VAT settings for invoice label
@@ -638,28 +817,44 @@ public class PaymentController {
                     ? payment.getPaidAt().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
                     : "—";
 
-            // Subscription period
-            String subStartStr = "—";
-            String subEndStr = "—";
-            if (payment.getSubscriptionId() != null) {
+            // Billed period, preferring the immutable Payment-level snapshots over
+            // the live Subscription row (which is overwritten on renewal).
+            var dateFmt = java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy");
+            java.time.LocalDateTime periodStart = payment.getSubscriptionStartDateSnapshot();
+            java.time.LocalDateTime periodEnd = payment.getSubscriptionEndDateSnapshot();
+            if ((periodStart == null || periodEnd == null) && payment.getSubscriptionId() != null) {
                 var subs = subscriptionRepository.findById(payment.getSubscriptionId());
                 if (subs.isPresent()) {
                     var sub = subs.get();
-                    subStartStr = sub.getStartDate() != null
-                            ? sub.getStartDate().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy")) : "—";
-                    subEndStr = sub.getEndDate() != null
-                            ? sub.getEndDate().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy")) : "—";
+                    if (periodStart == null) periodStart = sub.getStartDate();
+                    if (periodEnd == null) periodEnd = sub.getEndDate();
                 }
             }
+            String subStartStr = periodStart != null ? periodStart.format(dateFmt) : "—";
+            String subEndStr = periodEnd != null ? periodEnd.format(dateFmt) : "—";
 
-            // Build the invoice HTML
-            String shopName = shopOwner.getShopName() != null ? shopOwner.getShopName()
-                    : (shopOwner.getFirstName() != null ? shopOwner.getFirstName() + " " + shopOwner.getLastName() : "—");
-            String ownerName = shopOwner.getFirstName() != null
-                    ? shopOwner.getFirstName() + " " + (shopOwner.getLastName() != null ? shopOwner.getLastName() : "") : "—";
-            String shopEmail = shopOwner.getEmail() != null ? shopOwner.getEmail() : "—";
-            String shopPhone = shopOwner.getPhone() != null ? shopOwner.getPhone() : "—";
-            String shopAddress = shopOwner.getAddress() != null ? shopOwner.getAddress() : "Nepal";
+            // Currency comes from the payment record, not a hardcoded symbol, so
+            // a historical invoice always shows the currency it was settled in.
+            String currency = payment.getCurrency() != null ? payment.getCurrency() : "NPR";
+
+            // All shop-owner fields below are user-controlled and persisted, so
+            // they must be HTML-escaped before interpolation. A Super Admin can
+            // view any shop's invoice, which makes this a stored-XSS path.
+            String rawShopName = shopOwner.getShopName() != null && !shopOwner.getShopName().isBlank()
+                    ? shopOwner.getShopName()
+                    : joinName(shopOwner.getFirstName(), shopOwner.getLastName());
+            String shopName = HtmlEscape.escapeOr(rawShopName, "—");
+            String ownerName = HtmlEscape.escapeOr(joinName(shopOwner.getFirstName(), shopOwner.getLastName()), "—");
+            String shopEmail = HtmlEscape.escapeOr(shopOwner.getEmail(), "—");
+            String shopPhone = HtmlEscape.escapeOr(shopOwner.getPhone(), "—");
+            String shopAddress = HtmlEscape.escapeOr(shopOwner.getAddress(), "Nepal");
+            String planNameSafe = HtmlEscape.escapeOr(snapshotPlanName, "—");
+            String billingCycleSafe = HtmlEscape.escapeOr(payment.getBillingCycle(), "—");
+            String gatewaySafe = HtmlEscape.escapeOr(payment.getGateway(), "—");
+            String invoiceNumberSafe = HtmlEscape.escapeOr(payment.getInvoiceNumber(), "—");
+            String transactionUuidSafe = HtmlEscape.escape(transactionUuid);
+            String currencySafe = HtmlEscape.escape(currency);
+            String taxLabelSafe = HtmlEscape.escape(taxLabel);
 
             String html = String.format("""
 <!DOCTYPE html>
@@ -801,16 +996,16 @@ public class PaymentController {
                     <tbody>
                         <tr>
                             <td class="desc-cell"><strong>Swari Sadhan %s Plan</strong><div class="sub">Subscription &middot; %s billing cycle</div></td>
-                            <td>NPR %s</td>
+                            <td>%s %s</td>
                         </tr>
                         %s
                         <tr>
                             <td class="desc-cell"><strong>%s</strong></td>
-                            <td>NPR %s</td>
+                            <td>%s %s</td>
                         </tr>
                         <tr class="total-row">
                             <td>TOTAL</td>
-                            <td>NPR %s</td>
+                            <td>%s %s</td>
                         </tr>
                     </tbody>
                 </table>
@@ -838,44 +1033,83 @@ public class PaymentController {
 </body>
 </html>
                 """,
-                payment.getInvoiceNumber(),              // title
-                payment.getInvoiceNumber(),              // invoice no (banner)
+                invoiceNumberSafe,                       // title
+                invoiceNumberSafe,                       // invoice no (banner)
                 paidDateStr,                             // invoice date (banner)
                 shopName,                                // shop name
                 ownerName,                               // owner
                 shopAddress,                             // address
                 shopEmail,                               // email
                 shopPhone,                               // phone
-                snapshotPlanName,                        // plan name
-                payment.getBillingCycle(),               // billing cycle
+                planNameSafe,                            // plan name
+                billingCycleSafe,                        // billing cycle
                 subStartStr,                             // subscription start
                 subEndStr,                               // subscription end
-                snapshotPlanName,                        // plan name (table)
-                payment.getBillingCycle(),               // billing cycle (table sub)
-                payment.getAmount().toPlainString(),     // amount
-                (payment.getDiscountAmount() != null && payment.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0)
-                        ? "<tr><td class=\"desc-cell\"><strong>Coupon Discount" +
-                          (payment.getCouponCodeSnapshot() != null ? " (" + payment.getCouponCodeSnapshot() + ")" : "") +
-                          "</strong></td><td style=\"color:#059669;\">- NPR " + payment.getDiscountAmount().toPlainString() + "</td></tr>"
-                        : "",                                       // discount row (empty if no discount)
-                taxLabel,                                // tax label
-                payment.getTaxAmount().toPlainString(),  // tax
-                payment.getTotalAmount().toPlainString(),// total
-                payment.getGateway(),                    // payment gateway
-                transactionUuid,                         // transaction ID
+                planNameSafe,                            // plan name (table)
+                billingCycleSafe,                        // billing cycle (table sub)
+                currencySafe,                            // subtotal currency
+                plainAmount(payment.getAmount()),        // amount
+                discountRow(payment, currencySafe),      // discount row (empty if no discount)
+                taxLabelSafe,                            // tax label
+                currencySafe,                            // tax currency
+                plainAmount(payment.getTaxAmount()),     // tax
+                currencySafe,                            // total currency
+                plainAmount(payment.getTotalAmount()),   // total
+                gatewaySafe,                             // payment gateway
+                transactionUuidSafe,                     // transaction ID
                 paidDateFullStr                          // payment date
             );
 
             httpServletResponse.setContentType("text/html;charset=UTF-8");
-            httpServletResponse.setHeader("Content-Disposition", "inline; filename=invoice_" + payment.getInvoiceNumber() + ".html");
+            httpServletResponse.setHeader("Content-Disposition",
+                    "inline; filename=invoice_" + sanitizeFilename(payment.getInvoiceNumber()) + ".html");
+            // Financial documents must not be cached by browsers or shared proxies.
+            httpServletResponse.setHeader("Cache-Control", "no-store, private");
+            httpServletResponse.setHeader("X-Content-Type-Options", "nosniff");
             httpServletResponse.getWriter().write(html);
         } catch (Exception e) {
-            log.error("Invoice download error: {}", e.getMessage(), e);
-            httpServletResponse.sendError(500, "Failed to generate invoice: " + e.getMessage());
+            // Do not surface exception details to the client — they can reveal
+            // internals. The full stack trace stays in the server log.
+            log.error("Invoice render failed for transaction_uuid={}: {}", transactionUuid, e.getMessage(), e);
+            httpServletResponse.sendError(500, "Failed to generate invoice");
         }
     }
 
     // ===== Helpers =====
+
+    private static String joinName(String first, String last) {
+        String f = first != null ? first : "";
+        String l = last != null ? last : "";
+        String joined = (f + " " + l).trim();
+        return joined.isEmpty() ? null : joined;
+    }
+
+    private static String plainAmount(java.math.BigDecimal value) {
+        return value != null ? value.toPlainString() : "0.00";
+    }
+
+    /** Optional coupon-discount line. Coupon codes are user-supplied, so escaped. */
+    private static String discountRow(swari.sewa.module.payment.entity.Payment payment, String currencySafe) {
+        var discount = payment.getDiscountAmount();
+        if (discount == null || discount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        String code = payment.getCouponCodeSnapshot();
+        String label = code != null && !code.isBlank()
+                ? "Coupon Discount (" + HtmlEscape.escape(code) + ")"
+                : "Coupon Discount";
+        return "<tr><td class=\"desc-cell\"><strong>" + label
+                + "</strong></td><td style=\"color:#059669;\">- " + currencySafe + " "
+                + discount.toPlainString() + "</td></tr>";
+    }
+
+    /** Strip anything that could break out of the Content-Disposition header. */
+    private static String sanitizeFilename(String value) {
+        if (value == null || value.isBlank()) {
+            return "invoice";
+        }
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
 
     private Long resolveShopOwnerIdFromToken(String token) {
         if (token == null || !jwtUtil.validateToken(token)) {
@@ -885,5 +1119,19 @@ public class PaymentController {
         return shopOwnerRepository.findByEmail(email)
                 .map(ShopOwner::getId)
                 .orElse(null);
+    }
+
+    private boolean isCurrentUserSuperAdmin(String token) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            for (var a : auth.getAuthorities()) {
+                if ("ROLE_SUPERADMIN".equals(a.getAuthority())) return true;
+            }
+        }
+        if (token != null && !token.isEmpty() && jwtUtil.validateToken(token)) {
+            String role = jwtUtil.getRoleFromToken(token);
+            return "SUPERADMIN".equalsIgnoreCase(role);
+        }
+        return false;
     }
 }
