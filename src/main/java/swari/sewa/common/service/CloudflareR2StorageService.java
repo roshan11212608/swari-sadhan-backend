@@ -20,7 +20,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import swari.sewa.common.exception.StorageException;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -101,13 +100,16 @@ public class CloudflareR2StorageService implements StorageService {
         String objectKey = buildObjectKey(file, category, entityId);
 
         long start = System.nanoTime();
-        try (InputStream input = file.getInputStream()) {
+        try {
             PutObjectRequest request = PutObjectRequest.builder()
                     .bucket(bucketName)
                     .key(objectKey)
                     .contentType(file.getContentType())
                     .build();
-            s3Client.putObject(request, RequestBody.fromInputStream(input, file.getSize()));
+            // Load into memory (max 10MB) instead of streaming, because the SDK's
+            // fromInputStream path requires a mark/reset-capable stream and throws
+            // IllegalStateException on retry for standard servlet MultipartFile streams.
+            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
             long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
             log.info("R2 upload succeeded: operation=putObject bucket={} key={} elapsedMs={}",
                     bucketName, objectKey, elapsedMs);
