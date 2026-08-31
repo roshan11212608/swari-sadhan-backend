@@ -7,16 +7,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import swari.sewa.common.exception.StorageException;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -54,12 +60,33 @@ public class CloudflareR2StorageService implements StorageService {
             log.warn("R2 endpoint is not configured; R2 storage is unavailable until R2_* environment variables are set.");
             return;
         }
+
+        SdkHttpClient httpClient = UrlConnectionHttpClient.builder()
+                .connectionTimeout(Duration.ofSeconds(10))
+                .socketTimeout(Duration.ofSeconds(30))
+                .build();
+
+        ClientOverrideConfiguration overrideConfiguration = ClientOverrideConfiguration.builder()
+                .apiCallTimeout(Duration.ofSeconds(60))
+                .apiCallAttemptTimeout(Duration.ofSeconds(45))
+                .build();
+
+        // R2 requires path-style access and non-chunked encoding for correct
+        // request signing (chunked encoding causes HTTP 403 signature mismatches).
+        S3Configuration s3Configuration = S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .chunkedEncodingEnabled(false)
+                .build();
+
         this.s3Client = S3Client.builder()
                 .endpointOverride(URI.create(endpoint.trim()))
                 .region(Region.of("auto"))
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(accessKey == null ? "" : accessKey.trim(),
                                 secretKey == null ? "" : secretKey.trim())))
+                .httpClient(httpClient)
+                .overrideConfiguration(overrideConfiguration)
+                .serviceConfiguration(s3Configuration)
                 .build();
         log.info("Cloudflare R2 storage initialized for bucket '{}' with endpoint '{}'", bucketName, endpoint);
     }
@@ -73,6 +100,7 @@ public class CloudflareR2StorageService implements StorageService {
 
         String objectKey = buildObjectKey(file, category, entityId);
 
+        long start = System.nanoTime();
         try (InputStream input = file.getInputStream()) {
             PutObjectRequest request = PutObjectRequest.builder()
                     .bucket(bucketName)
@@ -80,9 +108,18 @@ public class CloudflareR2StorageService implements StorageService {
                     .contentType(file.getContentType())
                     .build();
             s3Client.putObject(request, RequestBody.fromInputStream(input, file.getSize()));
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.info("R2 upload succeeded: operation=putObject bucket={} key={} elapsedMs={}",
+                    bucketName, objectKey, elapsedMs);
         } catch (IOException e) {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.error("R2 upload read failed: operation=putObject bucket={} key={} elapsedMs={} errorType={}",
+                    bucketName, objectKey, elapsedMs, e.getClass().getSimpleName());
             throw new StorageException("Failed to read uploaded file", e);
         } catch (Exception e) {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.error("R2 upload failed: operation=putObject bucket={} key={} elapsedMs={} errorType={}",
+                    bucketName, objectKey, elapsedMs, e.getClass().getSimpleName());
             throw new StorageException("Failed to upload file to object storage", e);
         }
 
@@ -114,15 +151,20 @@ public class CloudflareR2StorageService implements StorageService {
             return false;
         }
 
+        long start = System.nanoTime();
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder()
                     .bucket(bucketName)
                     .key(objectKey)
                     .build());
-            log.info("Deleted R2 object '{}'", objectKey);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.info("R2 delete succeeded: operation=deleteObject bucket={} key={} elapsedMs={}",
+                    bucketName, objectKey, elapsedMs);
             return true;
         } catch (Exception e) {
-            log.error("Failed to delete R2 object '{}': {}", objectKey, e.getMessage());
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.error("R2 delete failed: operation=deleteObject bucket={} key={} elapsedMs={} errorType={}",
+                    bucketName, objectKey, elapsedMs, e.getClass().getSimpleName());
             return false;
         }
     }
@@ -134,6 +176,32 @@ public class CloudflareR2StorageService implements StorageService {
             base = base.substring(0, base.length() - 1);
         }
         return base + "/" + objectKey;
+    }
+
+    /**
+     * Lightweight connectivity diagnostic. Does not upload or expose credentials.
+     *
+     * @return {@code true} when the R2 bucket is reachable with the configured credentials
+     */
+    public boolean checkConnectivity() {
+        if (s3Client == null) {
+            log.warn("R2 connectivity check skipped: storage is not configured.");
+            return false;
+        }
+
+        long start = System.nanoTime();
+        try {
+            s3Client.headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.info("R2 connectivity check succeeded: operation=headBucket bucket={} elapsedMs={}",
+                    bucketName, elapsedMs);
+            return true;
+        } catch (Exception e) {
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+            log.error("R2 connectivity check failed: operation=headBucket bucket={} elapsedMs={} errorType={}",
+                    bucketName, elapsedMs, e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private String buildObjectKey(MultipartFile file, StorageCategory category, Long entityId) {

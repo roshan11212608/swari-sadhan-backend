@@ -93,4 +93,21 @@ class CloudflareR2StorageServiceTest {
         assertFalse(deleted);
         verifyNoInteractions(s3Client);
     }
+
+    @Test
+    void checkConnectivity_returnsTrueWhenBucketReachable() {
+        // Default mock returns null without throwing, so headBucket is treated as successful.
+        boolean reachable = service.checkConnectivity();
+
+        assertTrue(reachable);
+    }
+
+    @Test
+    void checkConnectivity_returnsFalseWhenNotConfigured() {
+        ReflectionTestUtils.setField(service, "s3Client", null);
+
+        boolean reachable = service.checkConnectivity();
+
+        assertFalse(reachable);
+    }
 }
