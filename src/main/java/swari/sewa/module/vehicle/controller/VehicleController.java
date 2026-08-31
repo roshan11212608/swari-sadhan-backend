@@ -29,7 +29,8 @@ import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.common.enums.ShopStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import swari.sewa.common.service.FileStorageService;
+import swari.sewa.common.service.StorageCategory;
+import swari.sewa.common.service.StorageService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
@@ -52,7 +53,7 @@ public class VehicleController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
-    private final FileStorageService fileStorageService;
+    private final StorageService storageService;
     private final swari.sewa.module.subscription.service.SubscriptionAccessService subscriptionAccessService;
 
     private boolean hasRole(Authentication authentication, String role) {
@@ -295,7 +296,7 @@ public class VehicleController {
 
             // Handle file uploads
             if (mediaFiles != null && mediaFiles.length > 0) {
-                List<String> imageUrls = fileStorageService.storeFiles(mediaFiles);
+                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, null);
                 
                 // Set the first image as main image and add all to imageUrls
                 if (!imageUrls.isEmpty()) {
@@ -306,7 +307,7 @@ public class VehicleController {
 
             // Handle bluebook file uploads
             if (bluebookFiles != null && bluebookFiles.length > 0) {
-                List<String> bluebookUrls = fileStorageService.storeFiles(bluebookFiles);
+                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, null);
                 // Store bluebook URLs in specifications or as a separate field
                 // For now, we'll store them in the specifications JSON
                 String existingSpecs = vehicleDto.getSpecifications();
@@ -318,17 +319,17 @@ public class VehicleController {
 
             // Handle customer document uploads
             if (sellerPassportPhoto != null && !sellerPassportPhoto.isEmpty()) {
-                String passportPhotoUrl = fileStorageService.storeFile(sellerPassportPhoto);
+                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, null);
                 vehicleDto.setSellerPassportPhoto(passportPhotoUrl);
             }
 
             if (sellerCitizenshipFront != null && !sellerCitizenshipFront.isEmpty()) {
-                String citizenshipFrontUrl = fileStorageService.storeFile(sellerCitizenshipFront);
+                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, null);
                 vehicleDto.setSellerCitizenshipFront(citizenshipFrontUrl);
             }
 
             if (sellerCitizenshipBack != null && !sellerCitizenshipBack.isEmpty()) {
-                String citizenshipBackUrl = fileStorageService.storeFile(sellerCitizenshipBack);
+                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, null);
                 vehicleDto.setSellerCitizenshipBack(citizenshipBackUrl);
             }
 
@@ -512,6 +513,7 @@ public class VehicleController {
                     : new HashSet<>();
                 existingUrls.removeAll(imagesToDelete);
                 vehicleDto.setImageUrls(existingUrls);
+                imagesToDelete.forEach(storageService::deleteByUrl);
             }
             
             if (bluebookImagesToDeleteJson != null && !bluebookImagesToDeleteJson.isEmpty()) {
@@ -524,21 +526,31 @@ public class VehicleController {
                 existingBluebookUrls.removeAll(bluebookImagesToDelete);
                 specs.put("bluebookUrls", existingBluebookUrls);
                 vehicleDto.setSpecifications(objectMapper.writeValueAsString(specs));
+                bluebookImagesToDelete.forEach(storageService::deleteByUrl);
             }
             
             if ("true".equals(deletePassportPhoto)) {
+                if (vehicleDto.getSellerPassportPhoto() != null) {
+                    storageService.deleteByUrl(vehicleDto.getSellerPassportPhoto());
+                }
                 vehicleDto.setSellerPassportPhoto(null);
             }
             if ("true".equals(deleteCitizenshipFront)) {
+                if (vehicleDto.getSellerCitizenshipFront() != null) {
+                    storageService.deleteByUrl(vehicleDto.getSellerCitizenshipFront());
+                }
                 vehicleDto.setSellerCitizenshipFront(null);
             }
             if ("true".equals(deleteCitizenshipBack)) {
+                if (vehicleDto.getSellerCitizenshipBack() != null) {
+                    storageService.deleteByUrl(vehicleDto.getSellerCitizenshipBack());
+                }
                 vehicleDto.setSellerCitizenshipBack(null);
             }
             
             // Handle file uploads
             if (mediaFiles != null && mediaFiles.length > 0) {
-                List<String> imageUrls = fileStorageService.storeFiles(mediaFiles);
+                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, id);
                 if (!imageUrls.isEmpty()) {
                     Set<String> existingUrls = vehicleDto.getImageUrls() != null 
                         ? new HashSet<>(vehicleDto.getImageUrls()) 
@@ -552,7 +564,7 @@ public class VehicleController {
             }
 
             if (bluebookFiles != null && bluebookFiles.length > 0) {
-                List<String> bluebookUrls = fileStorageService.storeFiles(bluebookFiles);
+                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, id);
                 String existingSpecs = vehicleDto.getSpecifications();
                 java.util.Map<String, Object> specs = existingSpecs != null 
                     ? objectMapper.readValue(existingSpecs, java.util.Map.class) 
@@ -564,17 +576,17 @@ public class VehicleController {
             }
 
             if (sellerPassportPhoto != null && !sellerPassportPhoto.isEmpty()) {
-                String passportPhotoUrl = fileStorageService.storeFile(sellerPassportPhoto);
+                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, id);
                 vehicleDto.setSellerPassportPhoto(passportPhotoUrl);
             }
 
             if (sellerCitizenshipFront != null && !sellerCitizenshipFront.isEmpty()) {
-                String citizenshipFrontUrl = fileStorageService.storeFile(sellerCitizenshipFront);
+                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, id);
                 vehicleDto.setSellerCitizenshipFront(citizenshipFrontUrl);
             }
 
             if (sellerCitizenshipBack != null && !sellerCitizenshipBack.isEmpty()) {
-                String citizenshipBackUrl = fileStorageService.storeFile(sellerCitizenshipBack);
+                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, id);
                 vehicleDto.setSellerCitizenshipBack(citizenshipBackUrl);
             }
 
@@ -724,17 +736,17 @@ public class VehicleController {
             
             // Store files and set URLs into DTO
             if (customerPhoto != null && !customerPhoto.isEmpty()) {
-                String url = fileStorageService.storeFile(customerPhoto);
+                String url = storageService.store(customerPhoto, StorageCategory.VEHICLE, id);
                 customerData.setCustomerPhoto(url);
                 System.out.println("Customer photo stored: " + url);
             }
             if (citizenshipFrontPhoto != null && !citizenshipFrontPhoto.isEmpty()) {
-                String url = fileStorageService.storeFile(citizenshipFrontPhoto);
+                String url = storageService.store(citizenshipFrontPhoto, StorageCategory.VEHICLE, id);
                 customerData.setCitizenshipFrontPhoto(url);
                 System.out.println("Citizenship front photo stored: " + url);
             }
             if (citizenshipBackPhoto != null && !citizenshipBackPhoto.isEmpty()) {
-                String url = fileStorageService.storeFile(citizenshipBackPhoto);
+                String url = storageService.store(citizenshipBackPhoto, StorageCategory.VEHICLE, id);
                 customerData.setCitizenshipBackPhoto(url);
                 System.out.println("Citizenship back photo stored: " + url);
             }

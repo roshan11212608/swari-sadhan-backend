@@ -14,7 +14,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import swari.sewa.common.dto.ApiResponse;
-import swari.sewa.common.service.FileStorageService;
+import swari.sewa.common.service.StorageCategory;
+import swari.sewa.common.service.StorageService;
 import swari.sewa.module.expense.dto.ExpenseDashboardResponse;
 import swari.sewa.module.expense.dto.ExpenseRequest;
 import swari.sewa.module.expense.dto.ExpenseResponse;
@@ -34,7 +35,7 @@ import java.util.Optional;
 public class ExpenseController {
 
     private final ExpenseService expenseService;
-    private final FileStorageService fileStorageService;
+    private final StorageService storageService;
 
     @PostMapping
     @PreAuthorize("hasRole('SHOP_OWNER')")
@@ -222,7 +223,7 @@ public class ExpenseController {
         }
         
         try {
-            String filePath = fileStorageService.storeFile(file);
+            String filePath = storageService.store(file, StorageCategory.EXPENSE, id);
             log.info("File stored at: {}", filePath);
             
             // Create attachment record in database

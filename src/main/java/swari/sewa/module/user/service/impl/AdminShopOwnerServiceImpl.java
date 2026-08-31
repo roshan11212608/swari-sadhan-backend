@@ -17,7 +17,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import swari.sewa.common.service.FileStorageService;
+import swari.sewa.common.service.StorageCategory;
+import swari.sewa.common.service.StorageService;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -48,7 +49,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
     private final ShopRepository shopRepository;
     private final VehicleRepository vehicleRepository;
     private final PasswordEncoder passwordEncoder;
-    private final FileStorageService fileStorageService;
+    private final StorageService storageService;
     private final ObjectMapper objectMapper;
     private final ShopRegOtpRepository shopRegOtpRepository;
     private final EmailService emailService;
@@ -229,19 +230,19 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
             String shopRegUploadUrl = null;
 
             if (profilePhoto != null && !profilePhoto.isEmpty()) {
-                profilePhotoUrl = fileStorageService.storeFile(profilePhoto);
+                profilePhotoUrl = storageService.store(profilePhoto, StorageCategory.USER, null);
             }
             if (shopLogo != null && !shopLogo.isEmpty()) {
-                shopLogoUrl = fileStorageService.storeFile(shopLogo);
+                shopLogoUrl = storageService.store(shopLogo, StorageCategory.SHOP, null);
             }
             if (citizenshipPicFront != null && !citizenshipPicFront.isEmpty()) {
-                citizenshipPicFrontUrl = fileStorageService.storeFile(citizenshipPicFront);
+                citizenshipPicFrontUrl = storageService.store(citizenshipPicFront, StorageCategory.USER, null);
             }
             if (citizenshipPicBack != null && !citizenshipPicBack.isEmpty()) {
-                citizenshipPicBackUrl = fileStorageService.storeFile(citizenshipPicBack);
+                citizenshipPicBackUrl = storageService.store(citizenshipPicBack, StorageCategory.USER, null);
             }
             if (shopRegUpload != null && !shopRegUpload.isEmpty()) {
-                shopRegUploadUrl = fileStorageService.storeFile(shopRegUpload);
+                shopRegUploadUrl = storageService.store(shopRegUpload, StorageCategory.SHOP_REGISTRATION, null);
             }
 
             shopOwnerDto.setProfilePhoto(profilePhotoUrl);
