@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @Slf4j
@@ -124,9 +125,17 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
                 + "<h1 style='font-size:32px;letter-spacing:5px;color:#f97316'>" + emailOtp + "</h1>"
                 + "<p>This code is valid for " + OTP_TTL_MINUTES + " minutes. Do not share it.</p>"
                 + "</div>";
-        emailService.sendHtmlEmail(email, emailSubject, emailBody);
+        // Send email OTP in the background so the HTTP response is not blocked
+        // by Brevo's API latency. The user can enter the code as soon as it arrives.
+        CompletableFuture.runAsync(() -> {
+            try {
+                emailService.sendHtmlEmail(email, emailSubject, emailBody);
+            } catch (Exception ex) {
+                log.error("Background email send failed for shop registration (email: {}): {}", email, ex.getMessage());
+            }
+        });
 
-        log.info("Shop registration email OTP sent for email {} / mobile {}", email, maskMobile(mobile));
+        log.info("Shop registration email OTP queued for email {} / mobile {}", email, maskMobile(mobile));
         return "Verification code sent to your email.";
     }
 
