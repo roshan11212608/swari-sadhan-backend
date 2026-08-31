@@ -101,13 +101,12 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
                 });
 
         String emailOtp = generateOtp();
-        String mobileOtp = generateOtp();
 
         ShopRegOtp record = ShopRegOtp.builder()
                 .email(email)
                 .mobileNumber(mobile)
                 .emailOtpHash(passwordEncoder.encode(emailOtp))
-                .mobileOtpHash(passwordEncoder.encode(mobileOtp))
+                .mobileOtpHash(passwordEncoder.encode("MOBILE_OTP_NOT_REQUIRED"))
                 .expiresAt(LocalDateTime.now().plusMinutes(OTP_TTL_MINUTES))
                 .verificationAttempts(0)
                 .resendCount(0)
@@ -127,17 +126,8 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
                 + "</div>";
         emailService.sendHtmlEmail(email, emailSubject, emailBody);
 
-        // Send mobile OTP via SMS
-        String smsContent = "Swari Sadhan: Your mobile verification code is " + mobileOtp
-                + ". Valid for " + OTP_TTL_MINUTES + " minutes. Do not share it.";
-        boolean sent = brevoSmsService.sendSms(mobile, smsContent);
-        if (!sent) {
-            // Dev fallback already logs the OTP; in production this is a hard error.
-            log.warn("Mobile OTP SMS delivery failed for shop registration (email: {})", email);
-        }
-
-        log.info("Shop registration OTPs sent for email {} / mobile {}", email, maskMobile(mobile));
-        return "Verification codes sent to your email and mobile number.";
+        log.info("Shop registration email OTP sent for email {} / mobile {}", email, maskMobile(mobile));
+        return "Verification code sent to your email.";
     }
 
     @Override
@@ -170,13 +160,10 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
         record.setVerificationAttempts(record.getVerificationAttempts() + 1);
 
         boolean emailMatch = passwordEncoder.matches(request.getEmailOtp(), record.getEmailOtpHash());
-        boolean mobileMatch = passwordEncoder.matches(request.getMobileOtp(), record.getMobileOtpHash());
 
-        if (!emailMatch || !mobileMatch) {
+        if (!emailMatch) {
             shopRegOtpRepository.save(record);
-            String which = !emailMatch && !mobileMatch ? "both codes"
-                    : !emailMatch ? "the email code" : "the mobile code";
-            throw new IllegalArgumentException("Incorrect " + which + ". Please try again.");
+            throw new IllegalArgumentException("Incorrect email code. Please try again.");
         }
 
         // Both OTPs match — issue a verification token
@@ -186,11 +173,11 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
         record.setTokenExpiresAt(LocalDateTime.now().plusMinutes(TOKEN_TTL_MINUTES));
         shopRegOtpRepository.save(record);
 
-        log.info("Shop registration OTPs verified for email {} / mobile {}", email, maskMobile(mobile));
+        log.info("Shop registration email verified for email {} / mobile {}", email, maskMobile(mobile));
 
         return ShopRegVerifyOtpResponse.builder()
                 .signupVerificationToken(rawToken)
-                .message("Email and mobile verified successfully.")
+                .message("Email verified successfully.")
                 .build();
     }
 

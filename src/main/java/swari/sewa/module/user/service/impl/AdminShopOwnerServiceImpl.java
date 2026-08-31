@@ -87,14 +87,14 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
         // Validate the OTP verification token
         String token = shopOwnerDto.getSignupVerificationToken();
         if (token == null || token.isBlank()) {
-            throw new RuntimeException("Verification token is required. Please verify your email and mobile first.");
+            throw new RuntimeException("Verification token is required. Please verify your email first.");
         }
 
         String email = shopOwnerDto.getEmail().trim().toLowerCase();
         String mobile = normalizeMobile(shopOwnerDto.getPhone());
 
         ShopRegOtp otpRecord = shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
-                .orElseThrow(() -> new RuntimeException("No verification found. Please verify your email and mobile first."));
+                .orElseThrow(() -> new RuntimeException("No verification found. Please verify your email first."));
 
         if (!otpRecord.isVerified() || otpRecord.getUsedAt() != null) {
             throw new RuntimeException("Verification is invalid or already used. Please start over.");
@@ -107,7 +107,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
         String tokenHash = hashSha256(token);
         if (!tokenHash.equals(otpRecord.getVerificationTokenHash())) {
-            throw new RuntimeException("Invalid verification token. Please verify your email and mobile again.");
+            throw new RuntimeException("Invalid verification token. Please verify your email again.");
         }
 
         // Consume the token so it can't be reused

@@ -19,7 +19,5 @@ public class ShopRegVerifyOtpRequest {
     @Size(min = 6, max = 6, message = "Email OTP must be 6 digits")
     private String emailOtp;
 
-    @NotBlank(message = "Mobile OTP is required")
-    @Size(min = 6, max = 6, message = "Mobile OTP must be 6 digits")
     private String mobileOtp;
 }
