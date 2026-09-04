@@ -184,7 +184,7 @@ public class ShopController {
      */
     @PutMapping("/reorder")
     @PreAuthorize("hasRole('SUPERADMIN')")
-    public ResponseEntity<Void> reorderShops(@RequestBody List<ShopReorderDto> reorders) {
+    public ResponseEntity<Void> reorderShops(@Valid @RequestBody List<ShopReorderDto> reorders) {
         shopService.reorderShops(reorders);
         return ResponseEntity.ok().build();
     }

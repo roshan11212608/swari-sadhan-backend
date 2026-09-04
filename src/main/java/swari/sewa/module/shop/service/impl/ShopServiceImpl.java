@@ -476,7 +476,27 @@ public class ShopServiceImpl implements ShopService {
     @Override
     @Transactional
     public void reorderShops(List<swari.sewa.module.shop.dto.ShopReorderDto> reorders) {
-        if (reorders == null || reorders.isEmpty()) return;
+        if (reorders == null || reorders.isEmpty()) {
+            throw new IllegalArgumentException("Reorder list cannot be empty");
+        }
+        // Validate no duplicate shop IDs
+        java.util.Set<Long> seenIds = new java.util.HashSet<>();
+        // Validate no duplicate displayOrders
+        java.util.Set<Integer> seenOrders = new java.util.HashSet<>();
+        for (swari.sewa.module.shop.dto.ShopReorderDto dto : reorders) {
+            if (dto.getId() == null) {
+                throw new IllegalArgumentException("Shop id cannot be null");
+            }
+            if (dto.getDisplayOrder() == null || dto.getDisplayOrder() < 0) {
+                throw new IllegalArgumentException("Display order must be >= 0 for shop id: " + dto.getId());
+            }
+            if (!seenIds.add(dto.getId())) {
+                throw new IllegalArgumentException("Duplicate shop id in reorder request: " + dto.getId());
+            }
+            if (!seenOrders.add(dto.getDisplayOrder())) {
+                throw new IllegalArgumentException("Duplicate display order in reorder request: " + dto.getDisplayOrder());
+            }
+        }
         for (swari.sewa.module.shop.dto.ShopReorderDto dto : reorders) {
             Shop shop = shopRepository.findById(dto.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Shop not found with id: " + dto.getId()));
