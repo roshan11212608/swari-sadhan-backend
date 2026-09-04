@@ -22,7 +22,9 @@ import swari.sewa.common.service.StorageCategory;
 import swari.sewa.common.service.StorageService;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -353,91 +355,210 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
         log.info("Starting deletion of shop owner {} ({})", shopOwnerId, email);
 
-        try {
-            // Vehicle-related
-            safeExecuteUpdate("DELETE w FROM wishlists w INNER JOIN vehicles v ON w.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE e FROM enquiries e INNER JOIN vehicles v ON e.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE sa FROM sell_applications sa INNER JOIN vehicles v ON sa.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN vehicles v ON sva.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE vi FROM vehicle_images vi INNER JOIN vehicles v ON vi.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE pvl FROM public_vehicle_listings pvl INNER JOIN vehicles v ON pvl.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE pvlrh FROM public_vehicle_listing_review_history pvlrh INNER JOIN vehicles v ON pvlrh.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE v FROM vehicles v INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        // Use raw JDBC for all child-table deletes so that a failed SQL statement
+        // (missing table, wrong column) does NOT corrupt the JPA EntityManager.
+        // With JPA, once a query throws, the Session becomes unusable and all
+        // subsequent queries fail — which was the root cause of the persistent 500.
+        try (Connection conn = entityManager.unwrap(Connection.class)) {
 
-            // Employee-related
-            safeExecuteUpdate("DELETE sr FROM salary_records sr INNER JOIN employees e ON sr.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE lr FROM leave_requests lr INNER JOIN employees e ON lr.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE ap FROM advance_payments ap INNER JOIN employees e ON ap.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE att FROM attendance att INNER JOIN employees e ON att.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE e FROM employees e INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+            // ── 1. Vehicle-related (via shops → vehicles) ──
+            safeJdbcDelete(conn,
+                "DELETE w FROM wishlists w " +
+                "INNER JOIN vehicles v ON w.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE em FROM enquiry_messages em " +
+                "INNER JOIN enquiries e ON em.enquiry_id = e.id " +
+                "INNER JOIN vehicles v ON e.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE e FROM enquiries e " +
+                "INNER JOIN vehicles v ON e.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE sa FROM sell_applications sa " +
+                "INNER JOIN vehicles v ON sa.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE sva FROM sell_vehicle_applications sva " +
+                "INNER JOIN vehicles v ON sva.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE vi FROM vehicle_images vi " +
+                "INNER JOIN vehicles v ON vi.vehicle_id = v.id " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE v FROM vehicles v " +
+                "INNER JOIN shops s ON v.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
 
-            // Shop-related
-            safeExecuteUpdate("DELETE en FROM enquiries en INNER JOIN shops s ON en.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE ex FROM expenses ex INNER JOIN shops s ON ex.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE sr FROM shop_reviews sr INNER JOIN shops s ON sr.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN shops s ON sva.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+            // ── 2. Employee-related (via shops → employees) ──
+            safeJdbcDelete(conn,
+                "DELETE sr FROM salary_records sr " +
+                "INNER JOIN employees e ON sr.employee_id = e.id " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE lr FROM leave_requests lr " +
+                "INNER JOIN employees e ON lr.employee_id = e.id " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE ap FROM advance_payments ap " +
+                "INNER JOIN employees e ON ap.employee_id = e.id " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE att FROM attendance att " +
+                "INNER JOIN employees e ON att.employee_id = e.id " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE e FROM employees e " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
 
-            // Subscriptions
-            safeExecuteUpdate("DELETE st FROM subscription_transactions st INNER JOIN subscriptions sub ON st.subscription_id = sub.id WHERE sub.shop_owner_id = :id", shopOwnerId);
-            safeExecuteUpdate("DELETE FROM subscriptions WHERE shop_owner_id = :id", shopOwnerId);
+            // ── 3. Shop-related (direct FK to shops) ──
+            safeJdbcDelete(conn,
+                "DELETE em FROM enquiry_messages em " +
+                "INNER JOIN enquiries e ON em.enquiry_id = e.id " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE ea FROM expense_attachments ea " +
+                "INNER JOIN expenses ex ON ea.expense_id = ex.id " +
+                "INNER JOIN shops s ON ex.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE e FROM enquiries e " +
+                "INNER JOIN shops s ON e.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE ex FROM expenses ex " +
+                "INNER JOIN shops s ON ex.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE sr FROM shop_reviews sr " +
+                "INNER JOIN shops s ON sr.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE sva FROM sell_vehicle_applications sva " +
+                "INNER JOIN shops s ON sva.shop_id = s.id " +
+                "WHERE s.shop_owner_id = ?", shopOwnerId);
 
-            // Shop owner permissions (table may not exist)
-            safeExecuteUpdate("DELETE FROM shop_owner_permissions WHERE shop_owner_id = :id", shopOwnerId);
+            // ── 4. Subscription-related ──
+            safeJdbcDelete(conn,
+                "DELETE FROM subscription_coupon_usages WHERE shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE st FROM subscription_transactions st " +
+                "INNER JOIN subscriptions sub ON st.subscription_id = sub.id " +
+                "WHERE sub.shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE FROM subscription_transactions WHERE shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE FROM subscriptions WHERE shop_owner_id = ?", shopOwnerId);
 
-            // Shops
-            safeExecuteUpdate("DELETE FROM shops WHERE shop_owner_id = :id", shopOwnerId);
+            // ── 5. Payment / remarks (column-only FKs, no DB constraint) ──
+            safeJdbcDelete(conn,
+                "DELETE FROM payments WHERE shop_owner_id = ?", shopOwnerId);
+            safeJdbcDelete(conn,
+                "DELETE FROM shop_owner_remarks WHERE shop_owner_id = ?", shopOwnerId);
 
-            // OTP records
-            safeExecuteUpdate("DELETE FROM shop_reg_otp WHERE email = :email", email);
+            // ── 6. Public vehicle listings (by seller_user_id, NOT vehicle_id) ──
+            safeJdbcDelete(conn,
+                "DELETE pvlf FROM public_vehicle_listing_files pvlf " +
+                "INNER JOIN public_vehicle_listings pvl ON pvlf.listing_id = pvl.id " +
+                "INNER JOIN users u ON pvl.seller_user_id = u.id " +
+                "WHERE u.email = ?", email);
+            safeJdbcDelete(conn,
+                "DELETE pvlrh FROM public_vehicle_listing_review_history pvlrh " +
+                "INNER JOIN public_vehicle_listings pvl ON pvlrh.listing_id = pvl.id " +
+                "INNER JOIN users u ON pvl.seller_user_id = u.id " +
+                "WHERE u.email = ?", email);
+            safeJdbcDelete(conn,
+                "DELETE pvl FROM public_vehicle_listings pvl " +
+                "INNER JOIN users u ON pvl.seller_user_id = u.id " +
+                "WHERE u.email = ?", email);
 
-            // Mirrored user row
-            safeExecuteUpdate("DELETE FROM users WHERE email = :email", email);
+            // ── 7. Shops (must be before users and shop_owners) ──
+            safeJdbcDelete(conn,
+                "DELETE FROM shops WHERE shop_owner_id = ?", shopOwnerId);
 
-            // Clear JPA persistence context so it doesn't try to flush the managed
-            // ShopOwner entity (which we're about to delete via native SQL)
-            entityManager.clear();
+            // ── 8. Auth/OTP records (by email) ──
+            safeJdbcDelete(conn,
+                "DELETE FROM shop_reg_otp WHERE email = ?", email);
+            safeJdbcDelete(conn,
+                "DELETE FROM password_reset_otp WHERE email = ?", email);
+            safeJdbcDelete(conn,
+                "DELETE FROM refresh_tokens WHERE user_email = ?", email);
 
-            // Delete the shop owner via native SQL (bypass JPA to avoid lazy loading issues)
-            // Use executeUpdate (not safe) so we know if this fails
-            executeUpdate("DELETE FROM shop_owners WHERE id = :id", shopOwnerId);
+            // ── 9. Mirrored user row ──
+            safeJdbcDelete(conn,
+                "DELETE FROM users WHERE email = ?", email);
+
+            // ── 10. The shop owner itself ──
+            // Use raw JDBC too (not JPA) to avoid any EntityManager issues.
+            int rows = jdbcDelete(conn,
+                "DELETE FROM shop_owners WHERE id = ?", shopOwnerId);
+            if (rows == 0) {
+                log.warn("Shop owner {} was not deleted (may have already been removed)", shopOwnerId);
+            }
 
             log.info("Successfully deleted shop owner {} ({}) and all related records", shopOwnerId, email);
+
+        } catch (SQLException e) {
+            log.error("SQL error during deletion of shop owner {} ({}): {}", shopOwnerId, email, e.getMessage(), e);
+            throw new RuntimeException("Failed to delete shop owner due to database error", e);
         } catch (Exception e) {
             log.error("Failed to delete shop owner {} ({}): {}", shopOwnerId, email, e.getMessage(), e);
             throw new RuntimeException("Failed to delete shop owner: " + e.getMessage(), e);
         }
     }
 
-    private void safeExecuteUpdate(String sql, Long id) {
-        try {
-            Query query = entityManager.createNativeQuery(sql);
-            query.setParameter("id", id);
-            query.executeUpdate();
-        } catch (Exception e) {
-            log.warn("Skipping delete (table may not exist): {} — {}", sql.substring(0, Math.min(60, sql.length())), e.getMessage());
+    /**
+     * Execute a DELETE via raw JDBC.  A failure (missing table, wrong column)
+     * is logged as a WARNING and swallowed so that subsequent deletes can
+     * still proceed.  Unlike JPA's EntityManager, a failed JDBC statement
+     * does NOT corrupt the connection — the transaction remains usable.
+     */
+    private void safeJdbcDelete(Connection conn, String sql, Long id) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            log.warn("Skipping delete (table/column may not exist): {} — {}", abbreviate(sql), e.getMessage());
         }
     }
 
-    private void safeExecuteUpdate(String sql, String email) {
-        try {
-            Query query = entityManager.createNativeQuery(sql);
-            query.setParameter("email", email);
-            query.executeUpdate();
-        } catch (Exception e) {
-            log.warn("Skipping delete (table may not exist): {} — {}", sql.substring(0, Math.min(60, sql.length())), e.getMessage());
+    private void safeJdbcDelete(Connection conn, String sql, String email) {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, email);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            log.warn("Skipping delete (table/column may not exist): {} — {}", abbreviate(sql), e.getMessage());
         }
     }
 
-    private void executeUpdate(String sql, Long id) {
-        Query query = entityManager.createNativeQuery(sql);
-        query.setParameter("id", id);
-        query.executeUpdate();
+    /**
+     * Execute a DELETE via raw JDBC.  Unlike safeJdbcDelete, a failure here
+     * is thrown — use this for the final parent-table delete where failure
+     * must be reported.
+     */
+    private int jdbcDelete(Connection conn, String sql, Long id) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            return ps.executeUpdate();
+        }
     }
 
-    private void executeUpdate(String sql, String email) {
-        Query query = entityManager.createNativeQuery(sql);
-        query.setParameter("email", email);
-        query.executeUpdate();
+    private String abbreviate(String sql) {
+        return sql.length() > 80 ? sql.substring(0, 80) + "..." : sql;
     }
 
     @Override
