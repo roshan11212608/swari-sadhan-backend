@@ -226,8 +226,8 @@ public class ShopServiceImpl implements ShopService {
     @Transactional(readOnly = true)
     public List<ShopDto> getAllShops() {
         try {
-            // Fetch all shops with shopOwner in one query
-            List<Shop> shops = shopRepository.findAllWithShopOwner();
+            // Fetch only ACTIVE shops for the public listing — suspended/inactive/pending shops are excluded
+            List<Shop> shops = shopRepository.findAllActiveWithShopOwner();
 
             // Fetch all vehicle counts in one aggregation query
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMap();
@@ -250,8 +250,8 @@ public class ShopServiceImpl implements ShopService {
     @Transactional(readOnly = true)
     public Page<ShopDto> getAllShops(Pageable pageable) {
         try {
-            // Fetch paginated shops with shopOwner in one query
-            Page<Shop> shopsPage = shopRepository.findAllWithShopOwner(pageable);
+            // Fetch only ACTIVE shops for the public listing — suspended/inactive/pending shops are excluded
+            Page<Shop> shopsPage = shopRepository.findAllActiveWithShopOwner(pageable);
 
             // Fetch vehicle counts only for shops in current page
             java.util.List<Long> shopIds = shopsPage.getContent().stream()
