@@ -353,16 +353,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
 
         log.info("Starting deletion of shop owner {} ({})", shopOwnerId, email);
 
-        // Disable FK checks during deletion to avoid ordering issues.
-        // TiDB / MySQL: SET FOREIGN_KEY_CHECKS = 0
         try {
-            entityManager.createNativeQuery("SET FOREIGN_KEY_CHECKS = 0").executeUpdate();
-        } catch (Exception ignored) {}
-
-        try {
-            // Delete all related records — order no longer matters with FK checks off,
-            // but we still go child-first for cleanliness.
-
             // Vehicle-related
             safeExecuteUpdate("DELETE w FROM wishlists w INNER JOIN vehicles v ON w.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
             safeExecuteUpdate("DELETE e FROM enquiries e INNER JOIN vehicles v ON e.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
@@ -402,16 +393,18 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
             // Mirrored user row
             safeExecuteUpdate("DELETE FROM users WHERE email = :email", email);
 
-            // The shop owner itself
-            shopOwnerRepository.delete(shopOwner);
-            shopOwnerRepository.flush();
+            // Clear JPA persistence context so it doesn't try to flush the managed
+            // ShopOwner entity (which we're about to delete via native SQL)
+            entityManager.clear();
+
+            // Delete the shop owner via native SQL (bypass JPA to avoid lazy loading issues)
+            // Use executeUpdate (not safe) so we know if this fails
+            executeUpdate("DELETE FROM shop_owners WHERE id = :id", shopOwnerId);
 
             log.info("Successfully deleted shop owner {} ({}) and all related records", shopOwnerId, email);
-        } finally {
-            // Re-enable FK checks
-            try {
-                entityManager.createNativeQuery("SET FOREIGN_KEY_CHECKS = 1").executeUpdate();
-            } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.error("Failed to delete shop owner {} ({}): {}", shopOwnerId, email, e.getMessage(), e);
+            throw new RuntimeException("Failed to delete shop owner: " + e.getMessage(), e);
         }
     }
 
