@@ -361,18 +361,30 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
         safeExecuteUpdate("DELETE sa FROM sell_applications sa INNER JOIN vehicles v ON sa.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
         safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN vehicles v ON sva.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
         safeExecuteUpdate("DELETE vi FROM vehicle_images vi INNER JOIN vehicles v ON vi.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE pvl FROM public_vehicle_listings pvl INNER JOIN vehicles v ON pvl.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE pvlrh FROM public_vehicle_listing_review_history pvlrh INNER JOIN vehicles v ON pvlrh.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
         // 2. Delete vehicles
         safeExecuteUpdate("DELETE v FROM vehicles v INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
         // 3. Delete records that reference shops (not via vehicles)
+        // Employee-related tables (must delete before employees)
+        safeExecuteUpdate("DELETE sr FROM salary_records sr INNER JOIN employees e ON sr.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE lr FROM leave_requests lr INNER JOIN employees e ON lr.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE ap FROM advance_payments ap INNER JOIN employees e ON ap.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE att FROM attendance att INNER JOIN employees e ON att.employee_id = e.id INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
         safeExecuteUpdate("DELETE e FROM employees e INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+
+        // Other shop-related tables
         safeExecuteUpdate("DELETE en FROM enquiries en INNER JOIN shops s ON en.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
         safeExecuteUpdate("DELETE ex FROM expenses ex INNER JOIN shops s ON ex.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE ec FROM expense_categories ec INNER JOIN shops s ON ec.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE sr FROM shop_reviews sr INNER JOIN shops s ON sr.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
         safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN shops s ON sva.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
-        // 4. Delete subscriptions
+        // 4. Delete subscriptions and related
         safeExecuteUpdate("DELETE FROM subscriptions WHERE shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE st FROM subscription_transactions st INNER JOIN subscriptions sub ON st.subscription_id = sub.id WHERE sub.shop_owner_id = :id", shopOwnerId);
 
         // 5. Delete shop owner permissions (table may not exist)
         safeExecuteUpdate("DELETE FROM shop_owner_permissions WHERE shop_owner_id = :id", shopOwnerId);
