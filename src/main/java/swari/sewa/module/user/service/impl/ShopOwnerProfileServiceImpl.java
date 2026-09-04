@@ -90,6 +90,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
                     .emailAddress(shopOwner.getShopEmail() != null ? shopOwner.getShopEmail() : shopOwner.getEmail())
                     .status(ShopStatus.ACTIVE)
                     .isFeatured(false)
+                    .displayOrder(0)
                     .shopOwner(shopOwner)
                     .user(user)
                     .build();

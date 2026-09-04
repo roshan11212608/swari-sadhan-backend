@@ -155,6 +155,7 @@ public class VehicleController {
                 shop.setEmailAddress("demo@shop.com");
                 shop.setStatus(ShopStatus.ACTIVE);
                 shop.setIsFeatured(false);
+                shop.setDisplayOrder(0);
                 shop.setShopOwner(shopOwner);
                 
                 shopRepository.save(shop);
@@ -249,6 +250,7 @@ public class VehicleController {
                             .emailAddress(shopOwner.getShopEmail() != null ? shopOwner.getShopEmail() : shopOwner.getEmail())
                             .status(ShopStatus.ACTIVE)
                             .isFeatured(false)
+                            .displayOrder(0)
                             .shopOwner(shopOwner)
                             .user(user)
                             .build();

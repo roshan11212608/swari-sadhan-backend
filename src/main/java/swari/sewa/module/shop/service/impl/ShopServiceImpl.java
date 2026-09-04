@@ -191,6 +191,11 @@ public class ShopServiceImpl implements ShopService {
         shop.setShopOwner(shopOwner);
         shop.setStatus(ShopStatus.PENDING_APPROVAL);
 
+        // display_order is NOT NULL in DB — ensure it's never null
+        if (shop.getDisplayOrder() == null) {
+            shop.setDisplayOrder(0);
+        }
+
         // Copy shop logo from shop owner if not already set
         if (shop.getLogoUrl() == null && shopOwner.getShopLogo() != null) {
             shop.setLogoUrl(shopOwner.getShopLogo());
@@ -422,6 +427,10 @@ public class ShopServiceImpl implements ShopService {
         }
 
         modelMapper.map(shopDto, shop);
+        // display_order is NOT NULL in DB — preserve existing value if DTO sends null
+        if (shop.getDisplayOrder() == null) {
+            shop.setDisplayOrder(0);
+        }
         Shop updatedShop = shopRepository.save(shop);
         return mapToDto(updatedShop);
     }
