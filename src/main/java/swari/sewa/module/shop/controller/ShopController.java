@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import swari.sewa.module.shop.dto.ShopDto;
+import swari.sewa.module.shop.dto.ShopReorderDto;
 import swari.sewa.module.shop.dto.ShopReviewDto;
 import swari.sewa.module.shop.dto.ShopReviewSummaryDto;
 import swari.sewa.module.shop.dto.ShopReviewPageResponseDto;
@@ -175,6 +176,17 @@ public class ShopController {
     public ResponseEntity<ShopDto> suspendShop(@PathVariable Long id) {
         ShopDto shop = shopService.suspendShop(id);
         return ResponseEntity.ok(shop);
+    }
+
+    /**
+     * Reorder shops: accepts a list of {id, displayOrder} pairs and updates
+     * the display_order column for each shop in a single transaction.
+     */
+    @PutMapping("/reorder")
+    @PreAuthorize("hasRole('SUPERADMIN')")
+    public ResponseEntity<Void> reorderShops(@RequestBody List<ShopReorderDto> reorders) {
+        shopService.reorderShops(reorders);
+        return ResponseEntity.ok().build();
     }
 
     /* ===================== SHOP REVIEWS ===================== */

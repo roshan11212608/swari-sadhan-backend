@@ -84,13 +84,13 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user")
     List<Shop> findAllWithShopOwner();
 
-    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.status = 'ACTIVE'")
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.status = 'ACTIVE' ORDER BY s.displayOrder ASC, s.id ASC")
     List<Shop> findAllActiveWithShopOwner();
 
     @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user")
     org.springframework.data.domain.Page<Shop> findAllWithShopOwner(org.springframework.data.domain.Pageable pageable);
 
-    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.status = 'ACTIVE'")
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.status = 'ACTIVE' ORDER BY s.displayOrder ASC, s.id ASC")
     org.springframework.data.domain.Page<Shop> findAllActiveWithShopOwner(org.springframework.data.domain.Pageable pageable);
     
     @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.id = :id")

@@ -61,6 +61,7 @@ public class ShopServiceImpl implements ShopService {
         dto.setOpeningHours(shop.getOpeningHours());
         dto.setStatus(shop.getStatus());
         dto.setIsFeatured(shop.getIsFeatured());
+        dto.setDisplayOrder(shop.getDisplayOrder());
         dto.setSubscriptionPlan(shop.getSubscriptionPlan());
         dto.setSubscriptionExpiry(shop.getSubscriptionExpiry());
         dto.setCreatedAt(shop.getCreatedAt());
@@ -470,6 +471,18 @@ public class ShopServiceImpl implements ShopService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shop not found with id: " + id));
         shop.setStatus(ShopStatus.SUSPENDED);
         return mapToDto(shopRepository.save(shop));
+    }
+
+    @Override
+    @Transactional
+    public void reorderShops(List<swari.sewa.module.shop.dto.ShopReorderDto> reorders) {
+        if (reorders == null || reorders.isEmpty()) return;
+        for (swari.sewa.module.shop.dto.ShopReorderDto dto : reorders) {
+            Shop shop = shopRepository.findById(dto.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Shop not found with id: " + dto.getId()));
+            shop.setDisplayOrder(dto.getDisplayOrder());
+            shopRepository.save(shop);
+        }
     }
 
     @Override

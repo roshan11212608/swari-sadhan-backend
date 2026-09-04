@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import swari.sewa.module.shop.dto.ShopDto;
+import swari.sewa.module.shop.dto.ShopReorderDto;
 
 public interface ShopService {
     
@@ -47,6 +48,8 @@ public interface ShopService {
     ShopDto deactivateShop(Long id);
     
     ShopDto suspendShop(Long id);
+
+    void reorderShops(List<ShopReorderDto> reorders);
     
     boolean existsByLicenseNumber(String licenseNumber);
     

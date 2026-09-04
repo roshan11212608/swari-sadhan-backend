@@ -59,6 +59,8 @@ public class ShopDto {
 
     private Boolean isFeatured;
 
+    private Integer displayOrder;
+
     private String subscriptionPlan;
 
     private LocalDateTime subscriptionExpiry;

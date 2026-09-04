@@ -91,6 +91,9 @@ public class Shop {
     @Column(name = "is_featured")
     private Boolean isFeatured = false;
 
+    @Column(name = "display_order")
+    private Integer displayOrder = 0;
+
     @Column(name = "subscription_plan")
     private String subscriptionPlan;
 
