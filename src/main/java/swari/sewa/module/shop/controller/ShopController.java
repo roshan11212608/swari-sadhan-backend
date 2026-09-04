@@ -7,15 +7,22 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import swari.sewa.module.shop.dto.ShopDto;
 import swari.sewa.module.shop.dto.ShopReviewDto;
+import swari.sewa.module.shop.dto.ShopReviewSummaryDto;
+import swari.sewa.module.shop.dto.ShopReviewPageResponseDto;
 import swari.sewa.module.shop.entity.ShopReview;
 import swari.sewa.module.shop.repository.ShopReviewRepository;
 import swari.sewa.module.shop.service.ShopService;
 import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 @RestController
 @RequestMapping("/api/shops")
@@ -245,6 +252,116 @@ public class ShopController {
 
         shopReviewRepository.delete(review);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Paginated + filtered review endpoints ──
+    // Replaces loading ALL reviews + client-side filtering with server-side pagination.
+
+    @GetMapping("/{id}/reviews/paged")
+    public ResponseEntity<ShopReviewPageResponseDto> getShopReviewsPaged(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Integer rating,
+            @RequestParam(required = false) String search) {
+
+        return ResponseEntity.ok(buildPagedReviews(id, rating, search, page, size));
+    }
+
+    @GetMapping("/my-reviews/paged")
+    @PreAuthorize("hasRole('SHOP_OWNER')")
+    public ResponseEntity<ShopReviewPageResponseDto> getMyShopReviewsPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Integer rating,
+            @RequestParam(required = false) String search,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @RequestHeader(value = "X-Shop-Id", required = false) Long shopIdHeader,
+            org.springframework.security.core.Authentication authentication) {
+
+        Long shopId = resolveShopId(userId, shopIdHeader, authentication);
+        if (shopId == null) {
+            return ResponseEntity.ok(ShopReviewPageResponseDto.builder()
+                    .reviews(List.of())
+                    .summary(buildSummary(null))
+                    .page(page)
+                    .size(size)
+                    .totalElements(0)
+                    .totalPages(0)
+                    .build());
+        }
+
+        return ResponseEntity.ok(buildPagedReviews(shopId, rating, search, page, size));
+    }
+
+    private Long resolveShopId(Long userId, Long shopIdHeader, org.springframework.security.core.Authentication authentication) {
+        if (shopIdHeader != null) return shopIdHeader;
+        if (userId != null) {
+            Optional<ShopDto> shopOpt = shopService.getShopByUserId(userId);
+            if (shopOpt.isPresent()) return shopOpt.get().getId();
+        }
+        if (authentication != null && authentication.getName() != null) {
+            Optional<ShopDto> shopOpt = shopService.getShopByEmail(authentication.getName());
+            if (shopOpt.isPresent()) return shopOpt.get().getId();
+        }
+        return null;
+    }
+
+    private ShopReviewPageResponseDto buildPagedReviews(Long shopId, Integer rating, String search, int page, int size) {
+        String normalizedSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+        Pageable pageable = PageRequest.of(page, size);
+        Page<ShopReview> reviewPage = shopReviewRepository.findByShopIdWithFilters(shopId, rating, normalizedSearch, pageable);
+
+        List<ShopReviewDto> reviewDtos = reviewPage.getContent().stream()
+                .map(this::toReviewDto)
+                .collect(Collectors.toList());
+
+        return ShopReviewPageResponseDto.builder()
+                .reviews(reviewDtos)
+                .summary(buildSummary(shopId))
+                .page(reviewPage.getNumber())
+                .size(reviewPage.getSize())
+                .totalElements(reviewPage.getTotalElements())
+                .totalPages(reviewPage.getTotalPages())
+                .build();
+    }
+
+    private ShopReviewSummaryDto buildSummary(Long shopId) {
+        if (shopId == null) {
+            return ShopReviewSummaryDto.builder()
+                    .count(0)
+                    .averageRating(0.0)
+                    .distribution(List.of())
+                    .build();
+        }
+
+        long count = shopReviewRepository.countByShopId(shopId);
+        double avg = shopReviewRepository.getAverageRatingByShopId(shopId);
+
+        // Build rating distribution from a single group-by query
+        List<Object[]> ratingCounts = shopReviewRepository.countByShopIdGroupByRating(shopId);
+        List<ShopReviewSummaryDto.RatingBreakdown> distribution = new ArrayList<>();
+        // Initialize all stars 5..1 with 0, then fill from query results
+        int[] countsByStar = new int[6]; // index 1..5
+        for (Object[] row : ratingCounts) {
+            int star = ((Number) row[0]).intValue();
+            long cnt = ((Number) row[1]).longValue();
+            if (star >= 1 && star <= 5) {
+                countsByStar[star] = (int) cnt;
+            }
+        }
+        for (int star = 5; star >= 1; star--) {
+            distribution.add(ShopReviewSummaryDto.RatingBreakdown.builder()
+                    .star(star)
+                    .count(countsByStar[star])
+                    .build());
+        }
+
+        return ShopReviewSummaryDto.builder()
+                .count(count)
+                .averageRating(avg)
+                .distribution(distribution)
+                .build();
     }
 
     private ShopReviewDto toReviewDto(ShopReview review) {

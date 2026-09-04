@@ -38,4 +38,19 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT MAX(u.customerCode) FROM User u WHERE u.customerCode LIKE :prefix%")
     String findMaxCustomerCodeByPrefix(@Param("prefix") String prefix);
+
+    // ── Dashboard credentials: filtered + paginated queries ──
+
+    @Query("SELECT u FROM User u WHERE u.role = :role AND " +
+           "(LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE LOWER(CONCAT('%', :search, '%')))")
+    org.springframework.data.domain.Page<User> findByRoleAndSearch(@Param("role") UserRole role, @Param("search") String search, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT u FROM User u WHERE u.role = :role AND u.isActive = :active AND " +
+           "(LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(CONCAT(u.firstName, ' ', u.lastName)) LIKE LOWER(CONCAT('%', :search, '%')))")
+    org.springframework.data.domain.Page<User> findByRoleAndSearchAndActive(@Param("role") UserRole role, @Param("search") String search, @Param("active") Boolean active, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT u FROM User u WHERE u.role = :role AND u.isActive = :active")
+    org.springframework.data.domain.Page<User> findByRoleAndActive(@Param("role") UserRole role, @Param("active") Boolean active, org.springframework.data.domain.Pageable pageable);
 }

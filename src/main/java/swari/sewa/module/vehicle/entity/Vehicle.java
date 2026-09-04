@@ -1,6 +1,7 @@
 package swari.sewa.module.vehicle.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.BatchSize;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -217,7 +218,8 @@ public class Vehicle {
     
     @Column(name = "main_image_url")
     private String mainImageUrl;
-    
+
+    @BatchSize(size = 50)
     @ElementCollection
     @CollectionTable(name = "vehicle_images", joinColumns = @JoinColumn(name = "vehicle_id"))
     @Column(name = "image_url")

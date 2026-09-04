@@ -1,7 +1,9 @@
 package swari.sewa.module.employee.service.impl;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -181,5 +183,28 @@ public class EmployeeServiceImpl implements EmployeeService {
         }
         
         return String.format("EMP%d-%03d", shopId, nextNumber);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<EmployeeDto> searchAndFilterEmployees(Long shopId, String search, String status, String department, String employmentType, Pageable pageable) {
+        String normalizedSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+        String normalizedStatus = (status != null && !status.trim().isEmpty()) ? status.trim() : null;
+        String normalizedDepartment = (department != null && !department.trim().isEmpty()) ? department.trim() : null;
+        String normalizedEmploymentType = (employmentType != null && !employmentType.trim().isEmpty()) ? employmentType.trim() : null;
+
+        return employeeRepository.findByShopIdWithSearchAndFilters(
+                shopId, normalizedSearch, normalizedStatus, normalizedDepartment, normalizedEmploymentType, pageable)
+                .map(employeeMapper::toDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, List<String>> getFilterOptions(Long shopId) {
+        Map<String, List<String>> options = new HashMap<>();
+        options.put("departments", employeeRepository.findDistinctDepartmentsByShopId(shopId));
+        options.put("employmentTypes", employeeRepository.findDistinctEmploymentTypesByShopId(shopId));
+        options.put("statuses", employeeRepository.findDistinctStatusesByShopId(shopId));
+        return options;
     }
 }

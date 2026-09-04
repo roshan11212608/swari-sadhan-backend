@@ -24,15 +24,14 @@ public class AdminShopServiceImpl implements AdminShopService {
     @Transactional(readOnly = true)
     public Page<Object> getAllShops(Pageable pageable, String search, String status) {
         Page<Shop> shops;
-        
+
         if (search != null && !search.trim().isEmpty()) {
-            shops = shopRepository.findByNameContainingIgnoreCaseOrAddressContainingIgnoreCase(
-                    search, search, pageable);
+            shops = shopRepository.searchByKeywordWithShopOwnerPaged(search, pageable);
         } else if (status != null && !status.trim().isEmpty()) {
             ShopStatus shopStatus = ShopStatus.valueOf(status.toUpperCase());
-            shops = shopRepository.findByStatus(shopStatus, pageable);
+            shops = shopRepository.findByStatusWithShopOwner(shopStatus, pageable);
         } else {
-            shops = shopRepository.findAll(pageable);
+            shops = shopRepository.findAllWithShopOwner(pageable);
         }
         
         return shops.map(shop -> {
@@ -55,7 +54,7 @@ public class AdminShopServiceImpl implements AdminShopService {
     @Override
     @Transactional(readOnly = true)
     public Object getShopById(Long id) {
-        Shop shop = shopRepository.findById(id)
+        Shop shop = shopRepository.findByIdWithShopOwner(id)
                 .orElseThrow(() -> new RuntimeException("Shop not found"));
         
         Map<String, Object> shopData = new HashMap<>();
@@ -117,7 +116,7 @@ public class AdminShopServiceImpl implements AdminShopService {
     @Override
     @Transactional(readOnly = true)
     public Page<Object> getPendingShops(Pageable pageable) {
-        return shopRepository.findByStatus(ShopStatus.PENDING_APPROVAL, pageable)
+        return shopRepository.findByStatusWithShopOwner(ShopStatus.PENDING_APPROVAL, pageable)
                 .map(shop -> {
                     Map<String, Object> shopData = new HashMap<>();
                     shopData.put("id", shop.getId());

@@ -2,6 +2,7 @@ package swari.sewa.module.subscription.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -48,6 +49,9 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Slf4j
 public class TrialSubscriptionService {
+
+    @Value("${app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionTrialConfigRepository trialConfigRepository;
@@ -172,7 +176,7 @@ public class TrialSubscriptionService {
                     + "<p>You now have full access to all the features of the <strong>" + plan.getName() + "</strong> plan during your trial period.</p>"
                     + "<p style='color:#dc2626;font-weight:600'>Your trial will expire on " + endDateStr + ". "
                     + "Please subscribe to a paid plan before the trial ends to continue using Swari Sadhan without interruption.</p>"
-                    + "<a href='http://localhost:3000/shopowner/subscription' "
+                    + "<a href='" + frontendBaseUrl + "/shopowner/subscription' "
                     + "style='display:inline-block;background:#f97316;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;margin:8px 0'>"
                     + "View Subscription Plans</a>"
                     + "<p style='color:#6b7280;font-size:12px;margin-top:24px'>If you have any questions, please contact our support team.</p>"

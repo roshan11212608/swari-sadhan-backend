@@ -1,6 +1,7 @@
 package swari.sewa.common.service;
 
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -32,9 +33,10 @@ import java.util.UUID;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class CloudflareR2StorageService implements StorageService {
 
-    private static final long MAX_FILE_SIZE = 10L * 1024L * 1024L; // 10 MB
+    private final ImageValidationService imageValidationService;
 
     @Value("${r2.endpoint:}")
     private String endpoint;
@@ -91,11 +93,16 @@ public class CloudflareR2StorageService implements StorageService {
     }
 
     @Override
-    public String store(MultipartFile file, StorageCategory category, Long entityId) {
+    public String store(MultipartFile file, StorageCategory category, Long entityId, ImageType imageType) {
         if (s3Client == null) {
             throw new StorageException("Object storage is not configured. Please set the R2 environment variables.");
         }
-        validate(file);
+
+        if (imageType == null) {
+            imageType = ImageType.fromCategory(category);
+        }
+
+        imageValidationService.validate(file, imageType);
 
         String objectKey = buildObjectKey(file, category, entityId);
 
@@ -106,13 +113,13 @@ public class CloudflareR2StorageService implements StorageService {
                     .key(objectKey)
                     .contentType(file.getContentType())
                     .build();
-            // Load into memory (max 10MB) instead of streaming, because the SDK's
-            // fromInputStream path requires a mark/reset-capable stream and throws
+            // Load into memory (max now controlled by per-image validation) instead of streaming,
+            // because the SDK's fromInputStream path requires a mark/reset-capable stream and throws
             // IllegalStateException on retry for standard servlet MultipartFile streams.
             s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
             long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
-            log.info("R2 upload succeeded: operation=putObject bucket={} key={} elapsedMs={}",
-                    bucketName, objectKey, elapsedMs);
+            log.info("R2 upload succeeded: operation=putObject bucket={} key={} size={} type={} elapsedMs={}",
+                    bucketName, objectKey, file.getSize(), imageType, elapsedMs);
         } catch (IOException e) {
             long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
             log.error("R2 upload read failed: operation=putObject bucket={} key={} elapsedMs={} errorType={}",
@@ -129,13 +136,24 @@ public class CloudflareR2StorageService implements StorageService {
     }
 
     @Override
-    public List<String> storeAll(MultipartFile[] files, StorageCategory category, Long entityId) {
+    public List<String> storeAll(MultipartFile[] files, StorageCategory category, Long entityId, ImageType imageType) {
         List<String> urls = new ArrayList<>();
-        if (files != null) {
-            for (MultipartFile file : files) {
-                if (file != null && !file.isEmpty()) {
-                    urls.add(store(file, category, entityId));
-                }
+        if (files == null) {
+            return urls;
+        }
+
+        // Determine effective image type and validate every file before uploading any.
+        // This prevents partial uploads when a batch contains an oversized/invalid file.
+        ImageType effectiveType = imageType != null ? imageType : ImageType.fromCategory(category);
+        for (MultipartFile file : files) {
+            if (file != null && !file.isEmpty()) {
+                imageValidationService.validate(file, effectiveType);
+            }
+        }
+
+        for (MultipartFile file : files) {
+            if (file != null && !file.isEmpty()) {
+                urls.add(store(file, category, entityId, effectiveType));
             }
         }
         return urls;
@@ -215,20 +233,6 @@ public class CloudflareR2StorageService implements StorageService {
         }
         String idPart = entityId != null ? entityId.toString() : "new";
         return category.getPrefix() + "/" + idPart + "/" + unique;
-    }
-
-    private void validate(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new StorageException("Uploaded file is empty.");
-        }
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new StorageException("File size exceeds the 10MB limit.");
-        }
-        String contentType = file.getContentType();
-        if (contentType == null
-                || (!contentType.startsWith("image/") && !contentType.equals("application/pdf"))) {
-            throw new StorageException("Only image and PDF files are allowed.");
-        }
     }
 
     private String extractObjectKey(String publicUrl) {

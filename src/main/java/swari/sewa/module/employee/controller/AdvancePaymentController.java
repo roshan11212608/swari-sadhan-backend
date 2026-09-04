@@ -2,6 +2,7 @@ package swari.sewa.module.employee.controller;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -82,5 +83,13 @@ public class AdvancePaymentController {
     public ResponseEntity<List<AdvancePaymentDto>> getActiveAdvances(@PathVariable Long shopId) {
         List<AdvancePaymentDto> advances = advancePaymentService.getActiveAdvances(shopId);
         return ResponseEntity.ok(advances);
+    }
+
+    // ── Advance summary: totals + active count (for KPIs without loading ALL advances) ──
+
+    @GetMapping("/shop/{shopId}/summary")
+    @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
+    public ResponseEntity<Map<String, Object>> getAdvanceSummary(@PathVariable Long shopId) {
+        return ResponseEntity.ok(advancePaymentService.getAdvanceSummary(shopId));
     }
 }

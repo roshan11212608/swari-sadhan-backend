@@ -38,7 +38,9 @@ public class ShopServiceImpl implements ShopService {
     private final VehicleRepository vehicleRepository;
     private final ModelMapper modelMapper;
 
-    private ShopDto mapToDto(Shop shop, java.util.Map<Long, Long> vehicleCountMap) {
+    private ShopDto mapToDto(Shop shop, java.util.Map<Long, Long> vehicleCountMap,
+                             java.util.Map<Long, long[]> reviewStatsMap) {
+        // reviewStatsMap: shopId -> [count, avgRating (as long bits)]
         ShopDto dto = new ShopDto();
         dto.setId(shop.getId());
         dto.setName(shop.getName());
@@ -130,9 +132,10 @@ public class ShopServiceImpl implements ShopService {
         dto.setVehicleCount(vehicleCount.intValue());
         dto.setTotalVehicles(vehicleCount.intValue());
 
-        // Real rating/review data from shop_reviews table
-        long reviewCount = shopReviewRepository.countByShopId(shop.getId());
-        double avgRating = reviewCount > 0 ? shopReviewRepository.getAverageRatingByShopId(shop.getId()) : 0.0;
+        // Use pre-fetched review stats map instead of per-shop queries
+        long[] reviewStats = reviewStatsMap.getOrDefault(shop.getId(), new long[]{0, 0});
+        long reviewCount = reviewStats[0];
+        double avgRating = Double.longBitsToDouble(reviewStats[1]);
         dto.setRating(Math.round(avgRating * 10.0) / 10.0);
         dto.setReviewCount((int) reviewCount);
         dto.setTotalReviews((int) reviewCount);
@@ -142,10 +145,36 @@ public class ShopServiceImpl implements ShopService {
 
     // Overloaded method for backward compatibility (used in single-shop operations)
     private ShopDto mapToDto(Shop shop) {
-        return mapToDto(shop, java.util.Collections.singletonMap(
+        java.util.Map<Long, Long> vehicleCountMap = java.util.Collections.singletonMap(
             shop.getId(),
             vehicleRepository.countByShopId(shop.getId())
-        ));
+        );
+        java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(
+                java.util.Collections.singletonList(shop.getId()));
+        return mapToDto(shop, vehicleCountMap, reviewStatsMap);
+    }
+
+    /**
+     * Builds a Map of shopId -> [count, avgRatingBits] using a single batch query.
+     * Eliminates N+1 review count/avg queries when mapping a list of shops.
+     */
+    private java.util.Map<Long, long[]> buildReviewStatsMap(java.util.List<Long> shopIds) {
+        if (shopIds == null || shopIds.isEmpty()) {
+            return new java.util.HashMap<>();
+        }
+        List<Object[]> rows = shopReviewRepository.countAndAvgRatingByShopIds(shopIds);
+        java.util.Map<Long, long[]> map = new java.util.HashMap<>();
+        for (Object[] row : rows) {
+            Long shopId = (Long) row[0];
+            Long count = (Long) row[1];
+            Double avg = (Double) row[2];
+            map.put(shopId, new long[]{count, Double.doubleToRawLongBits(avg != null ? avg : 0.0)});
+        }
+        // Ensure shops with no reviews have a default entry
+        for (Long shopId : shopIds) {
+            map.putIfAbsent(shopId, new long[]{0, 0});
+        }
+        return map;
     }
 
     @Override
@@ -199,13 +228,17 @@ public class ShopServiceImpl implements ShopService {
         try {
             // Fetch all shops with shopOwner in one query
             List<Shop> shops = shopRepository.findAllWithShopOwner();
-            
+
             // Fetch all vehicle counts in one aggregation query
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMap();
-            
+
+            // Fetch review stats in one batch query
+            java.util.List<Long> shopIds = shops.stream().map(Shop::getId).collect(Collectors.toList());
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             // Map to DTOs using pre-fetched counts
             return shops.stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             log.error("Error fetching all shops: {}", e.getMessage(), e);
@@ -219,18 +252,19 @@ public class ShopServiceImpl implements ShopService {
         try {
             // Fetch paginated shops with shopOwner in one query
             Page<Shop> shopsPage = shopRepository.findAllWithShopOwner(pageable);
-            
+
             // Fetch vehicle counts only for shops in current page
             java.util.List<Long> shopIds = shopsPage.getContent().stream()
                     .map(Shop::getId)
                     .collect(Collectors.toList());
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
-            
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             // Map to DTOs using pre-fetched counts
             java.util.List<ShopDto> dtoList = shopsPage.getContent().stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
-            
+
             return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, shopsPage.getTotalElements());
         } catch (Exception e) {
             log.error("Error fetching paginated shops: {}", e.getMessage(), e);
@@ -259,28 +293,41 @@ public class ShopServiceImpl implements ShopService {
     
     /**
      * Builds a Map of shopId -> vehicleCount for specific shop IDs only.
-     * More efficient than fetching all counts when paginating.
+     * Filters in SQL instead of fetching all shops' counts and filtering in Java.
      */
     private java.util.Map<Long, Long> buildVehicleCountMapForShopIds(java.util.List<Long> shopIds) {
         if (shopIds == null || shopIds.isEmpty()) {
             return new java.util.HashMap<>();
         }
-        
+
+        java.util.List<java.util.Map<String, Object>> results = vehicleRepository.countVehiclesByShopIds(shopIds);
         java.util.Map<Long, Long> countMap = new java.util.HashMap<>();
-        for (Long shopId : shopIds) {
-            Long count = vehicleRepository.countByShopId(shopId);
-            countMap.put(shopId, count != null ? count : 0L);
+
+        for (java.util.Map<String, Object> result : results) {
+            Long shopId = (Long) result.get("shopId");
+            Long count = (Long) result.get("count");
+            if (shopId != null && count != null) {
+                countMap.put(shopId, count);
+            }
         }
-        
+
+        for (Long shopId : shopIds) {
+            countMap.putIfAbsent(shopId, 0L);
+        }
+
         return countMap;
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<ShopDto> getShopsByCity(String city) {
-        return shopRepository.findByCityAndStatusActiveWithShopOwner(city).stream().map(this::mapToDto).collect(Collectors.toList());
+        List<Shop> shops = shopRepository.findByCityAndStatusActiveWithShopOwner(city);
+        java.util.List<Long> shopIds = shops.stream().map(Shop::getId).collect(Collectors.toList());
+        java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
+        java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+        return shops.stream().map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap)).collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public Page<ShopDto> getShopsByCity(String city, Pageable pageable) {
@@ -288,11 +335,12 @@ public class ShopServiceImpl implements ShopService {
             Page<Shop> shopsPage = shopRepository.findByCityAndStatusActiveWithShopOwner(city, pageable);
             java.util.List<Long> shopIds = shopsPage.getContent().stream().map(Shop::getId).collect(Collectors.toList());
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
-            
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             java.util.List<ShopDto> dtoList = shopsPage.getContent().stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
-            
+
             return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, shopsPage.getTotalElements());
         } catch (Exception e) {
             log.error("Error fetching paginated shops by city: {}", e.getMessage(), e);
@@ -303,9 +351,13 @@ public class ShopServiceImpl implements ShopService {
     @Override
     @Transactional(readOnly = true)
     public List<ShopDto> getShopsByState(String state) {
-        return shopRepository.findByStateAndStatusActiveWithShopOwner(state).stream().map(this::mapToDto).collect(Collectors.toList());
+        List<Shop> shops = shopRepository.findByStateAndStatusActiveWithShopOwner(state);
+        java.util.List<Long> shopIds = shops.stream().map(Shop::getId).collect(Collectors.toList());
+        java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
+        java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+        return shops.stream().map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap)).collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public Page<ShopDto> getShopsByState(String state, Pageable pageable) {
@@ -313,11 +365,12 @@ public class ShopServiceImpl implements ShopService {
             Page<Shop> shopsPage = shopRepository.findByStateAndStatusActiveWithShopOwner(state, pageable);
             java.util.List<Long> shopIds = shopsPage.getContent().stream().map(Shop::getId).collect(Collectors.toList());
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
-            
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             java.util.List<ShopDto> dtoList = shopsPage.getContent().stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
-            
+
             return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, shopsPage.getTotalElements());
         } catch (Exception e) {
             log.error("Error fetching paginated shops by state: {}", e.getMessage(), e);
@@ -328,9 +381,15 @@ public class ShopServiceImpl implements ShopService {
     @Override
     @Transactional(readOnly = true)
     public List<ShopDto> getFeaturedShops() {
-        return shopRepository.findFeaturedShopsWithShopOwner().stream().map(this::mapToDto).collect(Collectors.toList());
+        Page<Shop> shopsPage = shopRepository.findFeaturedShopsWithShopOwner(Pageable.ofSize(10));
+        java.util.List<Long> shopIds = shopsPage.getContent().stream().map(Shop::getId).collect(Collectors.toList());
+        java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
+        java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+        return shopsPage.getContent().stream()
+                .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
+                .collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public Page<ShopDto> getFeaturedShops(Pageable pageable) {
@@ -338,11 +397,12 @@ public class ShopServiceImpl implements ShopService {
             Page<Shop> shopsPage = shopRepository.findFeaturedShopsWithShopOwner(pageable);
             java.util.List<Long> shopIds = shopsPage.getContent().stream().map(Shop::getId).collect(Collectors.toList());
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
-            
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             java.util.List<ShopDto> dtoList = shopsPage.getContent().stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
-            
+
             return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, shopsPage.getTotalElements());
         } catch (Exception e) {
             log.error("Error fetching paginated featured shops: {}", e.getMessage(), e);
@@ -421,9 +481,13 @@ public class ShopServiceImpl implements ShopService {
     @Override
     @Transactional(readOnly = true)
     public List<ShopDto> searchShops(String keyword) {
-        return shopRepository.searchByKeywordWithShopOwner(keyword).stream().map(this::mapToDto).collect(Collectors.toList());
+        List<Shop> shops = shopRepository.searchByKeywordWithShopOwner(keyword);
+        java.util.List<Long> shopIds = shops.stream().map(Shop::getId).collect(Collectors.toList());
+        java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
+        java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+        return shops.stream().map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap)).collect(Collectors.toList());
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public Page<ShopDto> searchShops(String keyword, Pageable pageable) {
@@ -431,11 +495,12 @@ public class ShopServiceImpl implements ShopService {
             Page<Shop> shopsPage = shopRepository.searchByKeywordWithShopOwner(keyword, pageable);
             java.util.List<Long> shopIds = shopsPage.getContent().stream().map(Shop::getId).collect(Collectors.toList());
             java.util.Map<Long, Long> vehicleCountMap = buildVehicleCountMapForShopIds(shopIds);
-            
+            java.util.Map<Long, long[]> reviewStatsMap = buildReviewStatsMap(shopIds);
+
             java.util.List<ShopDto> dtoList = shopsPage.getContent().stream()
-                    .map(shop -> mapToDto(shop, vehicleCountMap))
+                    .map(shop -> mapToDto(shop, vehicleCountMap, reviewStatsMap))
                     .collect(Collectors.toList());
-            
+
             return new org.springframework.data.domain.PageImpl<>(dtoList, pageable, shopsPage.getTotalElements());
         } catch (Exception e) {
             log.error("Error searching paginated shops: {}", e.getMessage(), e);

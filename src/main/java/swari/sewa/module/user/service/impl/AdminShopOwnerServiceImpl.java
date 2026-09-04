@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import swari.sewa.common.service.ImageType;
 import swari.sewa.common.service.StorageCategory;
 import swari.sewa.common.service.StorageService;
 
@@ -25,6 +26,7 @@ import jakarta.persistence.Query;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import swari.sewa.common.enums.UserRole;
 import swari.sewa.module.auth.entity.ShopRegOtp;
 import swari.sewa.module.auth.repository.ShopRegOtpRepository;
@@ -43,6 +45,9 @@ import swari.sewa.module.subscription.service.TrialSubscriptionService;
 @Transactional
 @Slf4j
 public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
+
+    @Value("${app.frontend-base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
 
     private final ShopOwnerRepository shopOwnerRepository;
     private final UserRepository userRepository;
@@ -95,6 +100,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
         String mobile = normalizeMobile(shopOwnerDto.getPhone());
 
         ShopRegOtp otpRecord = shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
+                .or(() -> shopRegOtpRepository.findLatestByEmail(email))
                 .orElseThrow(() -> new RuntimeException("No verification found. Please verify your email first."));
 
         if (!otpRecord.isVerified() || otpRecord.getUsedAt() != null) {
@@ -230,19 +236,19 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
             String shopRegUploadUrl = null;
 
             if (profilePhoto != null && !profilePhoto.isEmpty()) {
-                profilePhotoUrl = storageService.store(profilePhoto, StorageCategory.USER, null);
+                profilePhotoUrl = storageService.store(profilePhoto, StorageCategory.USER, null, ImageType.PROFILE_PHOTO);
             }
             if (shopLogo != null && !shopLogo.isEmpty()) {
-                shopLogoUrl = storageService.store(shopLogo, StorageCategory.SHOP, null);
+                shopLogoUrl = storageService.store(shopLogo, StorageCategory.SHOP, null, ImageType.SHOP_LOGO);
             }
             if (citizenshipPicFront != null && !citizenshipPicFront.isEmpty()) {
-                citizenshipPicFrontUrl = storageService.store(citizenshipPicFront, StorageCategory.USER, null);
+                citizenshipPicFrontUrl = storageService.store(citizenshipPicFront, StorageCategory.USER, null, ImageType.USER_DOCUMENT);
             }
             if (citizenshipPicBack != null && !citizenshipPicBack.isEmpty()) {
-                citizenshipPicBackUrl = storageService.store(citizenshipPicBack, StorageCategory.USER, null);
+                citizenshipPicBackUrl = storageService.store(citizenshipPicBack, StorageCategory.USER, null, ImageType.USER_DOCUMENT);
             }
             if (shopRegUpload != null && !shopRegUpload.isEmpty()) {
-                shopRegUploadUrl = storageService.store(shopRegUpload, StorageCategory.SHOP_REGISTRATION, null);
+                shopRegUploadUrl = storageService.store(shopRegUpload, StorageCategory.SHOP_REGISTRATION, null, ImageType.SHOP_REGISTRATION_DOC);
             }
 
             shopOwnerDto.setProfilePhoto(profilePhotoUrl);
@@ -252,6 +258,8 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
             shopOwnerDto.setShopRegUpload(shopRegUploadUrl);
 
             return createShopOwner(shopOwnerDto);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Error processing shop owner registration with files", e);
         }
@@ -434,7 +442,7 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
                 + "</div>"
                 + "<p style='color:#dc2626;font-weight:600'>IMPORTANT: You must change your password on first login.</p>"
                 + "<p>Click below to log in:</p>"
-                + "<a href='http://localhost:3000/login' style='display:inline-block;background:#f97316;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;margin:8px 0'>Login to Swari Sadhan</a>"
+                + "<a href='" + frontendBaseUrl + "/login' style='display:inline-block;background:#f97316;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;margin:8px 0'>Login to Swari Sadhan</a>"
                 + "<p style='color:#6b7280;font-size:12px;margin-top:24px'>If you did not register for Swari Sadhan, please ignore this email.</p>"
                 + "</div>";
         emailService.sendHtmlEmail(shopOwner.getEmail(), subject, htmlBody);

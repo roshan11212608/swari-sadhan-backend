@@ -125,7 +125,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new ResourceNotFoundException("Shop not found or access denied");
         }
 
-        Page<Expense> expenses = expenseRepository.findByShopIdAndIsActiveTrue(shopId, pageable);
+        Page<Expense> expenses = expenseRepository.findByShopIdAndIsActiveTrueWithDetails(shopId, pageable);
         return expenses.map(this::mapToResponse);
     }
 
@@ -139,7 +139,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new ResourceNotFoundException("Shop not found or access denied");
         }
 
-        Page<Expense> expenses = expenseRepository.searchExpenses(shopId, searchTerm, pageable);
+        Page<Expense> expenses = expenseRepository.searchExpensesWithDetails(shopId, searchTerm, pageable);
         return expenses.map(this::mapToResponse);
     }
 
@@ -155,7 +155,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new ResourceNotFoundException("Shop not found or access denied");
         }
 
-        Page<Expense> expenses = expenseRepository.findByFilters(
+        Page<Expense> expenses = expenseRepository.findByFiltersWithDetails(
                 shopId, title, categoryId, paymentStatus, paymentMethod,
                 startDate, endDate, minAmount, maxAmount, pageable);
         return expenses.map(this::mapToResponse);
@@ -236,7 +236,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
 
         Pageable pageable = PageRequest.of(0, limit);
-        List<Expense> expenses = expenseRepository.findUpcomingPayments(shopId, pageable);
+        List<Expense> expenses = expenseRepository.findUpcomingPaymentsWithDetails(shopId, pageable);
         return expenses.stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 

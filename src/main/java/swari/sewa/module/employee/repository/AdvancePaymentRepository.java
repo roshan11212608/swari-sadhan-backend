@@ -45,4 +45,9 @@ public interface AdvancePaymentRepository extends JpaRepository<AdvancePayment, 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM AdvancePayment a WHERE a.id = :id")
     java.util.Optional<AdvancePayment> findByIdWithLock(@Param("id") Long id);
+
+    // ── Advance summary: count of pending requests (for KPI without loading ALL advances) ──
+
+    @Query("SELECT COUNT(a) FROM AdvancePayment a WHERE a.employee.shop.id = :shopId AND a.status = :status AND a.deletedAt IS NULL")
+    Long countByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") String status);
 }

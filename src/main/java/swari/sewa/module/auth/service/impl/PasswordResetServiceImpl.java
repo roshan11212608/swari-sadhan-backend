@@ -49,8 +49,11 @@ public class PasswordResetServiceImpl implements PasswordResetService {
         // Check that the email belongs to at least one account. We don't reveal
         // to the caller whether the email exists, but we only send an OTP if it
         // does — so we don't waste email quota on unknown addresses.
-        boolean exists = userRepository.findByEmail(email).isPresent()
-                || shopOwnerRepository.findByEmail(email).isPresent();
+        // Use existsBy* (COUNT queries) instead of findBy* (full entity load)
+        // to avoid loading password hashes and other sensitive columns when we
+        // only need a yes/no answer.
+        boolean exists = userRepository.existsByEmail(email)
+                || shopOwnerRepository.existsByEmail(email);
 
         if (!exists) {
             log.info("Password reset requested for unknown email {} — no OTP sent", email);
@@ -188,14 +191,15 @@ public class PasswordResetServiceImpl implements PasswordResetService {
         }
 
         // Check that the mobile belongs to at least one account.
-        boolean exists = userRepository.findByPhoneNumber(mobile).isPresent()
-                || shopOwnerRepository.findByPhone(mobile).isPresent();
+        // Use existsBy* (COUNT queries) instead of findBy* (full entity load).
+        boolean exists = userRepository.existsByPhoneNumber(mobile)
+                || shopOwnerRepository.existsByPhone(mobile);
 
         if (!exists) {
             // Also try without the +977 prefix (some records may store just 10 digits)
             String localNum = mobile.replace("+977", "");
-            exists = userRepository.findByPhoneNumber(localNum).isPresent()
-                    || shopOwnerRepository.findByPhone(localNum).isPresent();
+            exists = userRepository.existsByPhoneNumber(localNum)
+                    || shopOwnerRepository.existsByPhone(localNum);
             if (!exists) {
                 log.info("Password reset requested for unknown mobile {} — no OTP sent", mobile);
                 throw new IllegalArgumentException(

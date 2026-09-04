@@ -2,7 +2,9 @@ package swari.sewa.module.employee.service.impl;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -140,5 +142,21 @@ public class LeaveServiceImpl implements LeaveService {
         
         long duration = ChronoUnit.DAYS.between(requestDto.getStartDate(), requestDto.getEndDate()) + 1;
         // Duration is set in the mapper/entity, not in the DTO
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Long> getLeaveSummary(Long shopId) {
+        List<Object[]> rows = leaveRequestRepository.countByShopIdGroupByStatus(shopId);
+        Map<String, Long> summary = new HashMap<>();
+        long total = 0;
+        for (Object[] row : rows) {
+            String status = (String) row[0];
+            long count = ((Number) row[1]).longValue();
+            summary.put(status, count);
+            total += count;
+        }
+        summary.put("Total", total);
+        return summary;
     }
 }

@@ -23,21 +23,71 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     Page<Vehicle> findByShopId(Long shopId, Pageable pageable);
 
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.shop.id = :shopId
+            """)
+    Page<Vehicle> findByShopIdWithDetails(@Param("shopId") Long shopId, Pageable pageable);
+
     @Modifying
     @Query("DELETE FROM Vehicle v WHERE v.shop.id = :shopId")
     void deleteByShopId(@Param("shopId") Long shopId);
 
     Page<Vehicle> findByStatusNot(VehicleStatus status, Pageable pageable);
 
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.status <> :status
+            """)
+    Page<Vehicle> findByStatusNotWithDetails(@Param("status") VehicleStatus status, Pageable pageable);
+
     Optional<Vehicle> findByIdAndShopId(Long id, Long shopId);
     
     Page<Vehicle> findByCategoryId(Long categoryId, Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.category.id = :categoryId
+            """)
+    Page<Vehicle> findByCategoryIdWithDetails(@Param("categoryId") Long categoryId, Pageable pageable);
     
     Page<Vehicle> findByStatus(VehicleStatus status, Pageable pageable);
-    
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            WHERE v.status = :status
+            """)
+    Page<Vehicle> findByStatusWithShop(@Param("status") VehicleStatus status, Pageable pageable);
+
     Page<Vehicle> findByVehicleType(VehicleType vehicleType, Pageable pageable);
-    
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.vehicleType = :vehicleType
+            """)
+    Page<Vehicle> findByVehicleTypeWithDetails(@Param("vehicleType") VehicleType vehicleType, Pageable pageable);
+
     Page<Vehicle> findByType(VehicleType type, Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            WHERE v.vehicleType = :vehicleType
+            """)
+    Page<Vehicle> findByTypeWithShop(@Param("vehicleType") VehicleType vehicleType, Pageable pageable);
     
     Page<Vehicle> findByShop_ShopOwner_Id(@Param("shopOwnerId") Long shopOwnerId, Pageable pageable);
     
@@ -61,14 +111,40 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     boolean existsByRegistrationNumber(String registrationNumber);
 
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'ACTIVE' AND v.shop.status = 'ACTIVE'")
-
     Page<Vehicle> findActiveVehicles(Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.status = 'ACTIVE' AND s.status = 'ACTIVE'
+            """)
+    Page<Vehicle> findActiveVehiclesWithDetails(Pageable pageable);
 
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'INACTIVE' AND v.shop.status = 'ACTIVE'")
     Page<Vehicle> findInactiveVehicles(Pageable pageable);
-    
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.status = 'INACTIVE' AND s.status = 'ACTIVE'
+            """)
+    Page<Vehicle> findInactiveVehiclesWithDetails(Pageable pageable);
+
     @Query("SELECT v FROM Vehicle v WHERE v.status = 'ACTIVE' AND v.shop.status = 'ACTIVE' AND v.isFeatured = true")
     Page<Vehicle> findFeaturedVehicles(Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            JOIN FETCH s.shopOwner
+            JOIN FETCH v.category
+            WHERE v.status = 'ACTIVE' AND s.status = 'ACTIVE' AND v.isFeatured = true
+            """)
+    Page<Vehicle> findFeaturedVehiclesWithDetails(Pageable pageable);
     
     @Query("SELECT v FROM Vehicle v WHERE " +
            "(:brand IS NULL OR v.brandName = :brand) AND " +
@@ -95,11 +171,54 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
                                @Param("maxKilometers") Integer maxKilometers,
                                @Param("city") String city,
                                Pageable pageable);
+
+    @Query("SELECT v FROM Vehicle v " +
+           "JOIN FETCH v.shop s " +
+           "JOIN FETCH s.shopOwner " +
+           "JOIN FETCH v.category " +
+           "WHERE " +
+           "(:brand IS NULL OR v.brandName = :brand) AND " +
+           "(:model IS NULL OR v.modelName = :model) AND " +
+           "(:vehicleType IS NULL OR v.vehicleType = :vehicleType) AND " +
+           "(:fuelType IS NULL OR v.fuelType = :fuelType) AND " +
+           "(:minPrice IS NULL OR v.sellingPrice >= :minPrice) AND " +
+           "(:maxPrice IS NULL OR v.sellingPrice <= :maxPrice) AND " +
+           "(:minYear IS NULL OR v.manufacturingYear >= :minYear) AND " +
+           "(:maxYear IS NULL OR v.manufacturingYear <= :maxYear) AND " +
+           "(:minKilometers IS NULL OR v.kilometersDriven >= :minKilometers) AND " +
+           "(:maxKilometers IS NULL OR v.kilometersDriven <= :maxKilometers) AND " +
+           "(:city IS NULL OR s.city = :city) AND " +
+           "v.status = 'ACTIVE' AND s.status = 'ACTIVE'")
+    Page<Vehicle> searchVehiclesWithDetails(@Param("brand") String brand,
+                               @Param("model") String model,
+                               @Param("vehicleType") VehicleType vehicleType,
+                               @Param("fuelType") String fuelType,
+                               @Param("minPrice") BigDecimal minPrice,
+                               @Param("maxPrice") BigDecimal maxPrice,
+                               @Param("minYear") Integer minYear,
+                               @Param("maxYear") Integer maxYear,
+                               @Param("minKilometers") Integer minKilometers,
+                               @Param("maxKilometers") Integer maxKilometers,
+                               @Param("city") String city,
+                               Pageable pageable);
     
     @Query("SELECT v FROM Vehicle v WHERE v.title LIKE %:keyword% OR v.description LIKE %:keyword% OR v.brandName LIKE %:keyword% OR v.modelName LIKE %:keyword%")
     Page<Vehicle> searchByKeyword(@Param("keyword") String keyword, Pageable pageable);
     
     Page<Vehicle> findByTitleContainingIgnoreCaseOrDescriptionContainingIgnoreCase(String title, String description, Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            WHERE v.title LIKE %:keyword% OR v.description LIKE %:keyword%
+            """)
+    Page<Vehicle> searchByKeywordWithShop(@Param("keyword") String keyword, Pageable pageable);
+
+    @Query("""
+            SELECT v FROM Vehicle v
+            JOIN FETCH v.shop s
+            """)
+    Page<Vehicle> findAllWithShop(Pageable pageable);
     
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status = :status")
     Long countByShopIdAndStatus(@Param("shopId") Long shopId, @Param("status") VehicleStatus status);
@@ -109,6 +228,13 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     @Query("SELECT v.shop.id as shopId, COUNT(v) as count FROM Vehicle v GROUP BY v.shop.id")
     java.util.List<java.util.Map<String, Object>> countVehiclesByShopGrouped();
+
+    /**
+     * Batch query: returns vehicle counts for specific shop IDs only,
+     * filtering in SQL instead of fetching all shops and filtering in Java.
+     */
+    @Query("SELECT v.shop.id as shopId, COUNT(v) as count FROM Vehicle v WHERE v.shop.id IN :shopIds GROUP BY v.shop.id")
+    java.util.List<java.util.Map<String, Object>> countVehiclesByShopIds(@Param("shopIds") List<Long> shopIds);
     
     @Query("SELECT COUNT(v) FROM Vehicle v WHERE v.status = :status")
     Long countByStatus(@Param("status") VehicleStatus status);
@@ -246,4 +372,24 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     
     @Query("SELECT COALESCE(SUM(v.sellingPrice), 0) FROM Vehicle v WHERE v.shop.id = :shopId AND v.status IN :statuses")
     BigDecimal sumPriceByShopIdAndStatusIn(@Param("shopId") Long shopId, @Param("statuses") List<VehicleStatus> statuses);
+
+    // ==================== OVERVIEW QUERIES (multi-year safe) ====================
+
+    @Query(value = "SELECT " +
+           "CONCAT(SUBSTRING(MONTHNAME(v.sold_at), 1, 3), ' ', YEAR(v.sold_at)) as period, " +
+           "COALESCE(SUM(v.selling_price), 0) as revenue, " +
+           "COALESCE(SUM(v.selling_price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))), 0) as grossProfit " +
+           "FROM vehicles v " +
+           "WHERE v.shop_id = :shopId AND v.sold_at BETWEEN :startDate AND :endDate AND v.status = 'SOLD' " +
+           "GROUP BY period ORDER BY period", nativeQuery = true)
+    List<Object[]> getMonthlySalesProfitOverview(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+    @Query(value = "SELECT " +
+           "CAST(YEAR(v.sold_at) AS CHAR) as period, " +
+           "COALESCE(SUM(v.selling_price), 0) as revenue, " +
+           "COALESCE(SUM(v.selling_price - (COALESCE(v.purchase_price, 0) + COALESCE(v.repair_cost, 0) + COALESCE(v.additional_expenses, 0))), 0) as grossProfit " +
+           "FROM vehicles v " +
+           "WHERE v.shop_id = :shopId AND v.sold_at BETWEEN :startDate AND :endDate AND v.status = 'SOLD' " +
+           "GROUP BY period ORDER BY period", nativeQuery = true)
+    List<Object[]> getYearlySalesProfitOverview(@Param("shopId") Long shopId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
 }

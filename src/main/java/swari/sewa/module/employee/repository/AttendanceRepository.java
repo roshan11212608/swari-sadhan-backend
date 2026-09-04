@@ -40,4 +40,15 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     
     @Query("SELECT COUNT(a) FROM Attendance a JOIN a.employee e JOIN e.shop WHERE e.shop.id = :shopId AND a.date = :date AND a.status = :status AND a.deletedAt IS NULL")
     Long countByShopIdAndDateAndStatus(@Param("shopId") Long shopId, @Param("date") LocalDate date, @Param("status") String status);
+
+    // ── Attendance trend: single GROUP BY query for 7 months (replaces 7 monthly queries) ──
+
+    @Query("SELECT YEAR(a.date), MONTH(a.date), a.status, COUNT(a) FROM Attendance a " +
+           "JOIN a.employee e JOIN e.shop WHERE e.shop.id = :shopId " +
+           "AND a.date >= :startDate AND a.deletedAt IS NULL " +
+           "GROUP BY YEAR(a.date), MONTH(a.date), a.status " +
+           "ORDER BY YEAR(a.date), MONTH(a.date)")
+    List<Object[]> countByShopIdAndDateRangeGroupByMonthAndStatus(
+            @Param("shopId") Long shopId,
+            @Param("startDate") LocalDate startDate);
 }

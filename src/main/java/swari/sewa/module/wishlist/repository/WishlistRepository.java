@@ -14,22 +14,36 @@ import swari.sewa.module.wishlist.entity.Wishlist;
 
 @Repository
 public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
-    
+
     Page<Wishlist> findByCustomer_Id(Long customerId, Pageable pageable);
-    
+
     List<Wishlist> findByCustomer_Id(Long customerId);
-    
+
     List<Wishlist> findByVehicle_Shop_Id(Long shopId);
-    
+
     @Query("SELECT CASE WHEN COUNT(w) > 0 THEN true ELSE false END FROM Wishlist w WHERE w.customer.id = :customerId AND w.vehicle.id = :vehicleId")
     boolean existsByCustomerIdAndVehicleId(@Param("customerId") Long customerId, @Param("vehicleId") Long vehicleId);
-    
+
     @Query("SELECT w FROM Wishlist w WHERE w.customer.id = :customerId AND w.vehicle.id = :vehicleId")
     Optional<Wishlist> findByCustomerIdAndVehicleId(@Param("customerId") Long customerId, @Param("vehicleId") Long vehicleId);
-    
+
     @Query("SELECT COUNT(w) FROM Wishlist w WHERE w.customer.id = :customerId")
     Long countByCustomerId(@Param("customerId") Long customerId);
-    
+
     @Query("SELECT COUNT(w) FROM Wishlist w WHERE w.vehicle.id = :vehicleId")
     Long countByVehicleId(@Param("vehicleId") Long vehicleId);
+
+    // ── JOIN FETCH variants (eliminate N+1 on customer, vehicle, vehicle.shop) ──
+
+    @Query("SELECT w FROM Wishlist w JOIN FETCH w.customer JOIN FETCH w.vehicle v JOIN FETCH v.shop WHERE w.customer.id = :customerId")
+    Page<Wishlist> findByCustomer_IdWithCustomerVehicleShop(@Param("customerId") Long customerId, Pageable pageable);
+
+    @Query("SELECT w FROM Wishlist w JOIN FETCH w.customer JOIN FETCH w.vehicle v JOIN FETCH v.shop WHERE w.customer.id = :customerId")
+    List<Wishlist> findByCustomer_IdWithCustomerVehicleShop(@Param("customerId") Long customerId);
+
+    @Query("SELECT w FROM Wishlist w JOIN FETCH w.customer JOIN FETCH w.vehicle v JOIN FETCH v.shop WHERE v.shop.id = :shopId")
+    List<Wishlist> findByVehicle_Shop_IdWithCustomerVehicleShop(@Param("shopId") Long shopId);
+
+    @Query("SELECT w FROM Wishlist w JOIN FETCH w.customer JOIN FETCH w.vehicle v JOIN FETCH v.shop WHERE w.id = :id")
+    Optional<Wishlist> findByIdWithCustomerVehicleShop(@Param("id") Long id);
 }

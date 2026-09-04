@@ -12,6 +12,7 @@ import swari.sewa.module.dashboard.dto.DashboardStatsDto;
 import swari.sewa.module.dashboard.dto.ShopOwnerDto;
 import swari.sewa.module.dashboard.dto.UserManagementDto;
 import swari.sewa.module.dashboard.dto.CredentialsDto;
+import swari.sewa.module.dashboard.dto.ShopDashboardSummaryDto;
 import swari.sewa.module.dashboard.service.DashboardService;
 
 import jakarta.validation.Valid;

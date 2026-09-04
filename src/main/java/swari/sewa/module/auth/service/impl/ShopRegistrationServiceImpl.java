@@ -50,12 +50,14 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
     @Override
     public String sendOtps(ShopRegSendOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase();
-        String mobile;
-        try {
-            mobile = normalizeMobile(request.getMobileNumber());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "Enter a valid Nepal mobile number (e.g. +97798XXXXXXXX).");
+        String mobile = null;
+        if (request.getMobileNumber() != null && !request.getMobileNumber().trim().isEmpty()) {
+            try {
+                mobile = normalizeMobile(request.getMobileNumber());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Enter a valid Nepal mobile number (e.g. +97798XXXXXXXX).");
+            }
         }
 
         // Prevent duplicate registrations, but allow a REJECTED shop owner to
@@ -76,30 +78,43 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
             throw new IllegalArgumentException("This email is already registered. Kindly login.");
         }
 
-        // Same status-aware check for the mobile number.
-        Optional<ShopOwner> existingByPhone = shopOwnerRepository.findByPhone(mobile);
-        if (existingByPhone.isPresent()) {
-            String status = existingByPhone.get().getApprovalStatus();
-            if ("PENDING".equals(status)) {
-                throw new IllegalArgumentException("Your application is already pending admin approval.");
-            }
-            if ("APPROVED".equals(status)) {
+        // Same status-aware check for the mobile number (only if provided).
+        if (mobile != null) {
+            Optional<ShopOwner> existingByPhone = shopOwnerRepository.findByPhone(mobile);
+            if (existingByPhone.isPresent()) {
+                String status = existingByPhone.get().getApprovalStatus();
+                if ("PENDING".equals(status)) {
+                    throw new IllegalArgumentException("Your application is already pending admin approval.");
+                }
+                if ("APPROVED".equals(status)) {
+                    throw new IllegalArgumentException("This mobile number is already registered. Kindly login.");
+                }
+                // REJECTED → allowed to re-apply; fall through.
+            } else if (userRepository.existsByPhoneNumber(mobile)) {
                 throw new IllegalArgumentException("This mobile number is already registered. Kindly login.");
             }
-            // REJECTED → allowed to re-apply; fall through.
-        } else if (userRepository.existsByPhoneNumber(mobile)) {
-            throw new IllegalArgumentException("This mobile number is already registered. Kindly login.");
         }
 
         // Rate limiting: check last sent time
-        shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
-                .ifPresent(existing -> {
-                    if (existing.getLastSentAt() != null
-                            && existing.getLastSentAt().plusSeconds(RESEND_COOLDOWN_SECONDS)
-                            .isAfter(LocalDateTime.now())) {
-                        throw new IllegalArgumentException("Please wait before requesting another OTP.");
-                    }
-                });
+        if (mobile != null) {
+            shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
+                    .ifPresent(existing -> {
+                        if (existing.getLastSentAt() != null
+                                && existing.getLastSentAt().plusSeconds(RESEND_COOLDOWN_SECONDS)
+                                .isAfter(LocalDateTime.now())) {
+                            throw new IllegalArgumentException("Please wait before requesting another OTP.");
+                        }
+                    });
+        } else {
+            shopRegOtpRepository.findLatestByEmail(email)
+                    .ifPresent(existing -> {
+                        if (existing.getLastSentAt() != null
+                                && existing.getLastSentAt().plusSeconds(RESEND_COOLDOWN_SECONDS)
+                                .isAfter(LocalDateTime.now())) {
+                            throw new IllegalArgumentException("Please wait before requesting another OTP.");
+                        }
+                    });
+        }
 
         String emailOtp = generateOtp();
 
@@ -142,17 +157,21 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
     @Override
     public ShopRegVerifyOtpResponse verifyOtps(ShopRegVerifyOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase();
-        String mobile;
-        try {
-            mobile = normalizeMobile(request.getMobileNumber());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException(
-                    "Enter a valid Nepal mobile number (e.g. +97798XXXXXXXX).");
+        String mobile = null;
+        if (request.getMobileNumber() != null && !request.getMobileNumber().trim().isEmpty()) {
+            try {
+                mobile = normalizeMobile(request.getMobileNumber());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Enter a valid Nepal mobile number (e.g. +97798XXXXXXXX).");
+            }
         }
 
-        ShopRegOtp record = shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
+        ShopRegOtp record = (mobile != null
+                ? shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
+                : shopRegOtpRepository.findLatestByEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "No OTP was requested for this email/mobile. Please request new codes."));
+                        "No OTP was requested for this email. Please request new codes."));
 
         if (record.isVerified() && record.getUsedAt() != null) {
             throw new IllegalArgumentException("This verification has already been used. Please start over.");
@@ -214,6 +233,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
     }
 
     static String maskMobile(String mobile) {
+        if (mobile == null) return "N/A";
         String digits = mobile.replaceAll("[^0-9]", "");
         if (digits.length() < 4) return "****";
         return "+977 " + digits.substring(0, 2) + "******" + digits.substring(digits.length() - 2);

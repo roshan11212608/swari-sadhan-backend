@@ -92,64 +92,69 @@ public class EmployeeDashboardController {
     @GetMapping("/shop/{shopId}/attendance-trend")
     @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
     public ResponseEntity<List<Map<String, Object>>> getAttendanceTrend(@PathVariable Long shopId) {
-        List<Map<String, Object>> trend = new java.util.ArrayList<>();
-        
-        // Get last 7 months attendance trend
+        // Use a single GROUP BY query for the last 7 months instead of 7 separate
+        // queries each loading ALL attendance records with JOIN FETCH + DTO mapping.
         LocalDate currentDate = LocalDate.now();
+        LocalDate startDate = currentDate.minusMonths(6).withDayOfMonth(1);
+
+        List<Object[]> rows = attendanceRepository.countByShopIdAndDateRangeGroupByMonthAndStatus(shopId, startDate);
+
+        // Build a lookup map: (year, month) → {status → count}
+        Map<String, Map<String, Long>> lookup = new HashMap<>();
+        for (Object[] row : rows) {
+            int year = ((Number) row[0]).intValue();
+            int month = ((Number) row[1]).intValue();
+            String status = (String) row[2];
+            long count = ((Number) row[3]).longValue();
+            String key = year + "-" + month;
+            lookup.computeIfAbsent(key, k -> new HashMap<>()).put(status, count);
+        }
+
+        List<Map<String, Object>> trend = new java.util.ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             LocalDate date = currentDate.minusMonths(i);
             int year = date.getYear();
             int month = date.getMonthValue();
-            
-            List<AttendanceDto> attendance = attendanceService.getAttendanceByMonth(year, month, shopId);
-            
-            long present = attendance.stream().filter(a -> "Present".equals(a.getStatus())).count();
-            long absent = attendance.stream().filter(a -> "Absent".equals(a.getStatus())).count();
-            long leave = attendance.stream().filter(a -> "Leave".equals(a.getStatus())).count();
-            
+            String key = year + "-" + month;
+            Map<String, Long> statusCounts = lookup.getOrDefault(key, java.util.Collections.emptyMap());
+
             Map<String, Object> monthData = new HashMap<>();
             monthData.put("month", date.getMonth().name().substring(0, 3));
-            monthData.put("present", present);
-            monthData.put("absent", absent);
-            monthData.put("leave", leave);
-            
+            monthData.put("present", statusCounts.getOrDefault("Present", 0L));
+            monthData.put("absent", statusCounts.getOrDefault("Absent", 0L));
+            monthData.put("leave", statusCounts.getOrDefault("Leave", 0L));
             trend.add(monthData);
         }
-        
+
         return ResponseEntity.ok(trend);
     }
     
     @GetMapping("/shop/{shopId}/salary-distribution")
     @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
     public ResponseEntity<List<Map<String, Object>>> getSalaryDistribution(@PathVariable Long shopId) {
-        List<Employee> employees = employeeRepository.findActiveByShopId(shopId);
-        
-        Map<String, BigDecimal> departmentSalary = new HashMap<>();
-        for (Employee employee : employees) {
-            String department = employee.getDepartment();
-            BigDecimal salary = employee.getBasicSalary();
-            departmentSalary.put(department, departmentSalary.getOrDefault(department, BigDecimal.ZERO).add(salary));
-        }
-        
+        // Use a single GROUP BY query instead of loading ALL employees and aggregating in Java.
+        List<Object[]> rows = employeeRepository.sumBasicSalaryGroupByDepartment(shopId);
         List<Map<String, Object>> distribution = new java.util.ArrayList<>();
-        for (Map.Entry<String, BigDecimal> entry : departmentSalary.entrySet()) {
+        for (Object[] row : rows) {
+            String department = (String) row[0];
+            BigDecimal totalSalary = (BigDecimal) row[1];
             Map<String, Object> data = new HashMap<>();
-            data.put("name", entry.getKey());
-            data.put("value", entry.getValue());
+            data.put("name", department);
+            data.put("value", totalSalary != null ? totalSalary : BigDecimal.ZERO);
             distribution.add(data);
         }
-        
         return ResponseEntity.ok(distribution);
     }
     
     @GetMapping("/shop/{shopId}/recent-employees")
     @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
     public ResponseEntity<List<EmployeeDto>> getRecentEmployees(@PathVariable Long shopId) {
-        List<Employee> employees = employeeRepository.findActiveByShopId(shopId);
-        // Sort by joining date descending and take first 5
-        return ResponseEntity.ok(employees.stream()
-                .sorted((e1, e2) -> e2.getJoiningDate().compareTo(e1.getJoiningDate()))
-                .limit(5)
+        // Use paginated query ordered by joining date desc — loads only 5 employees
+        // instead of loading ALL and sorting in Java.
+        org.springframework.data.domain.Page<Employee> page = employeeRepository
+                .findByShopIdOrderByJoiningDateDesc(shopId,
+                        org.springframework.data.domain.PageRequest.of(0, 5));
+        return ResponseEntity.ok(page.getContent().stream()
                 .map(employeeMapper::toDto)
                 .toList());
     }
@@ -157,7 +162,12 @@ public class EmployeeDashboardController {
     @GetMapping("/shop/{shopId}/recent-leaves")
     @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
     public ResponseEntity<List<LeaveRequestDto>> getRecentLeaves(@PathVariable Long shopId) {
-        List<LeaveRequestDto> leaves = leaveRequestRepository.findByShopIdOrderByAppliedDateDesc(shopId).stream()
+        // Use paginated query ordered by applied date desc — loads only 5 leave records
+        // instead of loading ALL and taking 5 in Java.
+        org.springframework.data.domain.Page<swari.sewa.module.employee.entity.LeaveRequest> page =
+                leaveRequestRepository.findByShopIdOrderByAppliedDateDesc(shopId,
+                        org.springframework.data.domain.PageRequest.of(0, 5));
+        return ResponseEntity.ok(page.getContent().stream()
                 .map(leave -> {
                     LeaveRequestDto dto = new LeaveRequestDto();
                     dto.setId(leave.getId());
@@ -178,9 +188,7 @@ public class EmployeeDashboardController {
                     dto.setRejectionReason(leave.getRejectionReason());
                     return dto;
                 })
-                .limit(5)
-                .toList();
-        return ResponseEntity.ok(leaves);
+                .toList());
     }
     
     @GetMapping("/shop/{shopId}/recent-attendance")

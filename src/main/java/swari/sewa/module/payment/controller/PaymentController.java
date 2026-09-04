@@ -617,6 +617,38 @@ public class PaymentController {
                 swari.sewa.module.payment.enums.PaymentStatus.SUCCESS
         );
 
+        // ── Batch-fetch subscriptions and plans for legacy payments to avoid N+1 ──
+        // Before: for each payment without planNameSnapshot, 1-2 queries per payment
+        //         (subscriptionRepository.findById + planService.getPlanEntity)
+        // After: collect all needed subscription IDs and plan IDs, batch-fetch in 2 queries,
+        //        then look up in-memory maps.
+        java.util.Set<Long> subscriptionIdsNeeded = new java.util.HashSet<>();
+        java.util.Set<Long> planIdsNeeded = new java.util.HashSet<>();
+        for (var payment : payments) {
+            if (payment.getPlanNameSnapshot() == null) {
+                if (payment.getSubscriptionId() != null) subscriptionIdsNeeded.add(payment.getSubscriptionId());
+                if (payment.getSubscriptionPlanId() != null) planIdsNeeded.add(payment.getSubscriptionPlanId());
+            }
+        }
+
+        // Batch-fetch subscriptions
+        Map<Long, String> subscriptionPlanNames = new java.util.HashMap<>();
+        if (!subscriptionIdsNeeded.isEmpty()) {
+            for (var sub : subscriptionRepository.findAllById(subscriptionIdsNeeded)) {
+                if (sub.getPlanNameSnapshot() != null) {
+                    subscriptionPlanNames.put(sub.getId(), sub.getPlanNameSnapshot());
+                }
+            }
+        }
+
+        // Batch-fetch plans
+        Map<Long, String> planNames = new java.util.HashMap<>();
+        if (!planIdsNeeded.isEmpty()) {
+            for (var plan : planService.findAllById(planIdsNeeded)) {
+                planNames.put(plan.getId(), plan.getName());
+            }
+        }
+
         java.util.List<BillingHistoryItem> items = new java.util.ArrayList<>();
         for (var payment : payments) {
             String planName = "—";
@@ -626,18 +658,12 @@ public class PaymentController {
                 planName = payment.getPlanNameSnapshot();
             }
             // Fall back to subscription snapshot (legacy payments without planNameSnapshot)
-            if (planName.equals("—") && payment.getSubscriptionId() != null) {
-                var subOpt = subscriptionRepository.findById(payment.getSubscriptionId());
-                if (subOpt.isPresent() && subOpt.get().getPlanNameSnapshot() != null) {
-                    planName = subOpt.get().getPlanNameSnapshot();
-                }
+            else if (payment.getSubscriptionId() != null && subscriptionPlanNames.containsKey(payment.getSubscriptionId())) {
+                planName = subscriptionPlanNames.get(payment.getSubscriptionId());
             }
             // Fall back to live plan only if no snapshot at all
-            if (planName.equals("—")) {
-                try {
-                    var plan = planService.getPlanEntity(payment.getSubscriptionPlanId());
-                    if (plan != null) planName = plan.getName();
-                } catch (Exception e) { /* plan may be deleted */ }
+            else if (payment.getSubscriptionPlanId() != null && planNames.containsKey(payment.getSubscriptionPlanId())) {
+                planName = planNames.get(payment.getSubscriptionPlanId());
             }
 
             items.add(BillingHistoryItem.builder()

@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 import swari.sewa.module.subscription.dto.*;
 import swari.sewa.module.subscription.entity.SubscriptionPlan;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface SubscriptionPlanService {
@@ -18,4 +19,5 @@ public interface SubscriptionPlanService {
     SubscriptionPlanResponse archivePlan(Long id, Long adminUserId);
     SubscriptionPlanResponse duplicatePlan(Long id, Long adminUserId);
     SubscriptionPlan getPlanEntity(Long id);
+    List<SubscriptionPlan> findAllById(Collection<Long> ids);
 }

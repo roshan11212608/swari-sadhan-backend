@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import swari.sewa.common.dto.ApiResponse;
+import swari.sewa.common.service.ImageType;
 import swari.sewa.common.service.StorageCategory;
 import swari.sewa.common.service.StorageService;
 import swari.sewa.module.expense.dto.ExpenseDashboardResponse;
@@ -206,24 +207,13 @@ public class ExpenseController {
         log.info("File Size: {}", file.getSize());
         log.info("Content Type: {}", file.getContentType());
         
+        // Validation is now handled by ImageValidationService inside StorageService before R2 upload.
         String userEmail = authentication.getName();
+        String contentType = file.getContentType();
         log.info("User Email: {}", userEmail);
         
-        // Validate file type
-        String contentType = file.getContentType();
-        if (contentType == null || (!contentType.startsWith("image/") && !contentType.equals("application/pdf"))) {
-            log.error("Invalid file type: {}", contentType);
-            return ResponseEntity.ok(ApiResponse.error("Only images and PDF files are allowed"));
-        }
-        
-        // Validate file size (10MB max)
-        if (file.getSize() > 10 * 1024 * 1024) {
-            log.error("File size exceeds limit: {}", file.getSize());
-            return ResponseEntity.ok(ApiResponse.error("File size exceeds 10MB limit"));
-        }
-        
         try {
-            String filePath = storageService.store(file, StorageCategory.EXPENSE, id);
+            String filePath = storageService.store(file, StorageCategory.EXPENSE, id, ImageType.EXPENSE_ATTACHMENT);
             log.info("File stored at: {}", filePath);
             
             // Create attachment record in database

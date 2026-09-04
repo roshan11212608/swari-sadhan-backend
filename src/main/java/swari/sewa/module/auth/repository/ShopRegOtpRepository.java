@@ -15,4 +15,8 @@ public interface ShopRegOtpRepository extends JpaRepository<ShopRegOtp, Long> {
            "ORDER BY o.createdAt DESC LIMIT 1")
     Optional<ShopRegOtp> findLatestByEmailAndMobile(@Param("email") String email,
                                                      @Param("mobile") String mobile);
+
+    @Query("SELECT o FROM ShopRegOtp o WHERE o.email = :email " +
+           "ORDER BY o.createdAt DESC LIMIT 1")
+    Optional<ShopRegOtp> findLatestByEmail(@Param("email") String email);
 }

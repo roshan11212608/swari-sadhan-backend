@@ -190,69 +190,69 @@ public class VehicleServiceImpl implements VehicleService {
     @Transactional(readOnly = true)
     public Page<VehicleDto> getAllVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findByStatusNot(VehicleStatus.SOLD, pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findByStatusNotWithDetails(VehicleStatus.SOLD, pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getVehiclesByShop(Long shopId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findByShopId(shopId, pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findByShopIdWithDetails(shopId, pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getVehiclesByCategory(Long categoryId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findByCategoryId(categoryId, pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findByCategoryIdWithDetails(categoryId, pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getVehiclesByType(VehicleType vehicleType, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findByVehicleType(vehicleType, pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findByVehicleTypeWithDetails(vehicleType, pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getActiveVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findActiveVehicles(pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findActiveVehiclesWithDetails(pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getInactiveVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findInactiveVehicles(pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findInactiveVehiclesWithDetails(pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> getFeaturedVehicles(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return vehicleRepository.findFeaturedVehicles(pageable)
-                .map(this::mapToDtoWithDetails);
+        return vehicleRepository.findFeaturedVehiclesWithDetails(pageable)
+                .map(this::mapToDtoForList);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<VehicleDto> searchVehicles(VehicleSearchRequest searchRequest) {
         Pageable pageable = PageRequest.of(searchRequest.getPage(), searchRequest.getSize());
-        
+
         VehicleType vehicleType = null;
         if (searchRequest.getVehicleType() != null) {
             vehicleType = VehicleType.valueOf(searchRequest.getVehicleType().toUpperCase());
         }
 
-        return vehicleRepository.searchVehicles(
+        return vehicleRepository.searchVehiclesWithDetails(
                 searchRequest.getBrand(),
                 searchRequest.getModel(),
                 vehicleType,
@@ -265,7 +265,7 @@ public class VehicleServiceImpl implements VehicleService {
                 searchRequest.getMaxKilometers(),
                 searchRequest.getCity(),
                 pageable
-        ).map(this::mapToDtoWithDetails);
+        ).map(this::mapToDtoForList);
     }
 
     @Override
@@ -583,7 +583,7 @@ public class VehicleServiceImpl implements VehicleService {
     @Transactional(readOnly = true)
     public List<VehicleDto> getPendingApprovalVehicles() {
         return vehicleRepository.findPendingApprovalVehicles().stream()
-                .map(this::mapToDtoWithDetails)
+                .map(this::mapToDtoForList)
                 .collect(Collectors.toList());
     }
 
@@ -591,7 +591,7 @@ public class VehicleServiceImpl implements VehicleService {
     @Transactional(readOnly = true)
     public List<VehicleDto> getVehiclesByStatus(VehicleStatus status) {
         return vehicleRepository.findByShopIdAndStatus(null, status).stream()
-                .map(this::mapToDtoWithDetails)
+                .map(this::mapToDtoForList)
                 .collect(Collectors.toList());
     }
 
@@ -601,7 +601,42 @@ public class VehicleServiceImpl implements VehicleService {
         return vehicleRepository.existsByRegistrationNumber(registrationNumber);
     }
 
+    /**
+     * Lightweight DTO mapping for list endpoints. Skips the sell-application
+     * lookup for SOLD vehicles (which is only needed on the detail page).
+     * This eliminates an N+1 query when a list contains SOLD vehicles.
+     */
+    private VehicleDto mapToDtoForList(Vehicle vehicle) {
+        VehicleDto dto = mapToDtoCommon(vehicle);
+        // For list views, skip the sell-application lookup — it's only needed
+        // on the detail page. The offeredPrice will be null in list responses,
+        // which is the same behavior as before for non-SOLD vehicles.
+        return dto;
+    }
+
+    /**
+     * Full DTO mapping for single-vehicle detail endpoints. Includes the
+     * sell-application lookup for SOLD vehicles to show the actual offered price.
+     */
     private VehicleDto mapToDtoWithDetails(Vehicle vehicle) {
+        VehicleDto dto = mapToDtoCommon(vehicle);
+        // For sold vehicles, fetch the offered price from the sell vehicle application
+        if (vehicle.getStatus() == VehicleStatus.SOLD) {
+            List<swari.sewa.module.vehicle.entity.SellVehicleApplication> apps = sellVehicleApplicationRepository.findByVehicleId(vehicle.getId());
+            if (!apps.isEmpty()) {
+                apps.stream()
+                        .filter(a -> a.getOfferedPrice() != null)
+                        .reduce((first, second) -> second) // get latest
+                        .ifPresent(app -> dto.setOfferedPrice(app.getOfferedPrice()));
+            }
+        }
+        return dto;
+    }
+
+    /**
+     * Common DTO mapping shared by list and detail variants.
+     */
+    private VehicleDto mapToDtoCommon(Vehicle vehicle) {
         VehicleDto dto = modelMapper.map(vehicle, VehicleDto.class);
         dto.setShopId(vehicle.getShop().getId());
         dto.setShopName(vehicle.getShop().getName());
@@ -650,16 +685,6 @@ public class VehicleServiceImpl implements VehicleService {
         dto.setPrice(vehicle.getPrice()); // Frontend price = backend price (cost price)
         dto.setSellPrice(vehicle.getSellingPrice()); // Frontend sellPrice = backend sellingPrice
         dto.setPurchasePrice(vehicle.getPurchasePrice()); // Also set purchasePrice field for reference
-        // For sold vehicles, fetch the offered price from the sell vehicle application
-        if (vehicle.getStatus() == VehicleStatus.SOLD) {
-            List<swari.sewa.module.vehicle.entity.SellVehicleApplication> apps = sellVehicleApplicationRepository.findByVehicleId(vehicle.getId());
-            if (!apps.isEmpty()) {
-                apps.stream()
-                        .filter(a -> a.getOfferedPrice() != null)
-                        .reduce((first, second) -> second) // get latest
-                        .ifPresent(app -> dto.setOfferedPrice(app.getOfferedPrice()));
-            }
-        }
         dto.setOwnershipType(vehicle.getOwnershipType());
         dto.setIsFeatured(vehicle.getIsFeatured());
         dto.setRejectionReason(vehicle.getRejectionReason());

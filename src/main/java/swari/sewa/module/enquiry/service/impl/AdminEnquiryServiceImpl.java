@@ -25,15 +25,15 @@ public class AdminEnquiryServiceImpl implements AdminEnquiryService {
     @Transactional(readOnly = true)
     public Page<Object> getAllEnquiries(Pageable pageable, String status, String search) {
         Page<Enquiry> enquiries;
-        
+
         if (search != null && !search.trim().isEmpty()) {
-            enquiries = enquiryRepository.findByCustomerFirstNameContainingIgnoreCaseOrCustomerLastNameContainingIgnoreCase(
+            enquiries = enquiryRepository.searchByCustomerNameWithCustomerVehicleShop(
                     search, search, pageable);
         } else if (status != null && !status.trim().isEmpty()) {
             EnquiryStatus enquiryStatus = EnquiryStatus.valueOf(status.toUpperCase());
-            enquiries = enquiryRepository.findByStatus(enquiryStatus, pageable);
+            enquiries = enquiryRepository.findByStatusWithCustomerVehicleShop(enquiryStatus, pageable);
         } else {
-            enquiries = enquiryRepository.findAll(pageable);
+            enquiries = enquiryRepository.findAllWithCustomerVehicleShop(pageable);
         }
         
         return enquiries.map(enquiry -> {
@@ -56,7 +56,7 @@ public class AdminEnquiryServiceImpl implements AdminEnquiryService {
     @Override
     @Transactional(readOnly = true)
     public Object getEnquiryById(Long id) {
-        Enquiry enquiry = enquiryRepository.findById(id)
+        Enquiry enquiry = enquiryRepository.findByIdWithCustomerVehicleShop(id)
                 .orElseThrow(() -> new RuntimeException("Enquiry not found"));
         
         Map<String, Object> enquiryData = new HashMap<>();
@@ -119,7 +119,7 @@ public class AdminEnquiryServiceImpl implements AdminEnquiryService {
     @Override
     @Transactional(readOnly = true)
     public Page<Object> getPendingEnquiries(Pageable pageable) {
-        return enquiryRepository.findByStatus(EnquiryStatus.PENDING, pageable)
+        return enquiryRepository.findByStatusWithCustomerVehicleShop(EnquiryStatus.PENDING, pageable)
                 .map(enquiry -> {
                     Map<String, Object> enquiryData = new HashMap<>();
                     enquiryData.put("id", enquiry.getId());

@@ -9,13 +9,16 @@ import swari.sewa.module.analytics.util.DateFilterUtil;
 import swari.sewa.module.expense.repository.ExpenseRepository;
 import swari.sewa.module.finance.dto.*;
 import swari.sewa.module.finance.service.FinanceService;
+import swari.sewa.module.vehicle.repository.VehicleRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,6 +29,7 @@ public class FinanceServiceImpl implements FinanceService {
 
     private final BusinessCalculationEngine businessCalculationEngine;
     private final ExpenseRepository expenseRepository;
+    private final VehicleRepository vehicleRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -33,14 +37,21 @@ public class FinanceServiceImpl implements FinanceService {
         DateFilterUtil.DateRange dateRange = DateFilterUtil.getDateRange(filter);
         boolean isYearly = filter.equalsIgnoreCase("thisyear");
 
-        // Get KPIs using BusinessCalculationEngine (single source of truth)
+        // ── KPIs: compute base values once, derive the rest in-memory ──
+        // Before: 6 engine calls → ~13 SQL queries (getSalesValue called 4×, getCOGS 3×, getOperatingExpenses 3×)
+        // After: 3 SQL queries (salesValue, COGS, operatingExpenses) + in-memory derivation
         BigDecimal salesRevenue = businessCalculationEngine.getSalesValue(shopId, dateRange.getFrom(), dateRange.getTo());
-        BigDecimal inventoryPurchase = businessCalculationEngine.getInventoryPurchased(shopId, dateRange.getFrom().toLocalDate(), dateRange.getTo().toLocalDate());
+        BigDecimal cogs = businessCalculationEngine.getCOGS(shopId, dateRange.getFrom(), dateRange.getTo());
         BigDecimal operatingExpenses = businessCalculationEngine.getOperatingExpenses(shopId, dateRange.getFrom().toLocalDate(), dateRange.getTo().toLocalDate());
-        BigDecimal grossProfit = businessCalculationEngine.getGrossProfit(shopId, dateRange.getFrom(), dateRange.getTo());
-        BigDecimal netProfit = businessCalculationEngine.getNetProfit(shopId, dateRange.getFrom(), dateRange.getTo());
-        BigDecimal profitMargin = businessCalculationEngine.getProfitMargin(shopId, dateRange.getFrom(), dateRange.getTo());
-        
+        BigDecimal inventoryPurchase = businessCalculationEngine.getInventoryPurchased(shopId, dateRange.getFrom().toLocalDate(), dateRange.getTo().toLocalDate());
+
+        BigDecimal grossProfit = salesRevenue.subtract(cogs);
+        BigDecimal netProfit = grossProfit.subtract(operatingExpenses);
+        BigDecimal profitMargin = BigDecimal.ZERO;
+        if (salesRevenue.compareTo(BigDecimal.ZERO) != 0) {
+            profitMargin = grossProfit.divide(salesRevenue, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
+
         // Cash available (simplified - can be enhanced with actual cash tracking)
         BigDecimal cashAvailable = netProfit;
 
@@ -55,11 +66,11 @@ public class FinanceServiceImpl implements FinanceService {
                 .build();
 
         // Get trends from BusinessCalculationEngine
-        List<BusinessCalculationEngine.RevenueTrendData> revenueTrend = 
+        List<BusinessCalculationEngine.RevenueTrendData> revenueTrend =
             businessCalculationEngine.getRevenueTrend(shopId, dateRange.getFrom(), dateRange.getTo(), isYearly);
-        List<BusinessCalculationEngine.ExpenseTrendData> expenseTrend = 
+        List<BusinessCalculationEngine.ExpenseTrendData> expenseTrend =
             businessCalculationEngine.getExpenseTrend(shopId, dateRange.getFrom().toLocalDate(), dateRange.getTo().toLocalDate(), isYearly);
-        List<BusinessCalculationEngine.ProfitTrendData> profitTrend = 
+        List<BusinessCalculationEngine.ProfitTrendData> profitTrend =
             businessCalculationEngine.getProfitTrend(shopId, dateRange.getFrom(), dateRange.getTo(), isYearly);
 
         // Compose revenue vs expense trend from engine data
@@ -93,26 +104,44 @@ public class FinanceServiceImpl implements FinanceService {
                     .build());
         }
 
-        // Generate yearly overview (12 months)
-        List<FinancialDashboardResponse.YearlyOverviewData> yearlyOverview = new ArrayList<>();
+        // ── Yearly overview (12 months) ──
+        // Before: 12 months × 8 queries per month = ~96 SQL queries
+        // After: 2 SQL queries (1 vehicle GROUP BY + 1 expense GROUP BY) + in-memory merge
         LocalDate today = LocalDate.now();
-        String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-        
+        LocalDate yearlyStart = today.minusMonths(11).withDayOfMonth(1);
+        LocalDate yearlyEnd = today.withDayOfMonth(today.lengthOfMonth());
+
+        List<Object[]> monthlySalesData = vehicleRepository.getMonthlySalesProfitOverview(
+                shopId, yearlyStart.atStartOfDay(), yearlyEnd.atTime(23, 59, 59));
+        List<Object[]> monthlyExpenseData = expenseRepository.getMonthlyExpenseOverview(
+                shopId, yearlyStart, yearlyEnd);
+
+        // Build lookup maps keyed by "Mon YYYY"
+        Map<String, BigDecimal> revenueByPeriod = new HashMap<>();
+        Map<String, BigDecimal> grossProfitByPeriod = new HashMap<>();
+        for (Object[] row : monthlySalesData) {
+            String period = (String) row[0];
+            revenueByPeriod.put(period, toBigDecimal(row[1]));
+            grossProfitByPeriod.put(period, toBigDecimal(row[2]));
+        }
+        Map<String, BigDecimal> expensesByPeriod = new HashMap<>();
+        for (Object[] row : monthlyExpenseData) {
+            expensesByPeriod.put((String) row[0], toBigDecimal(row[1]));
+        }
+
+        // Generate all 12 month periods in order
+        String[] monthNames = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        List<FinancialDashboardResponse.YearlyOverviewData> yearlyOverview = new ArrayList<>();
         for (int i = 11; i >= 0; i--) {
             LocalDate monthDate = today.minusMonths(i);
-            LocalDate monthStart = monthDate.withDayOfMonth(1);
-            LocalDate monthEnd = monthDate.withDayOfMonth(monthDate.lengthOfMonth());
-            
-            LocalDateTime monthStartDateTime = monthStart.atStartOfDay();
-            LocalDateTime monthEndDateTime = monthEnd.atTime(23, 59, 59);
-            
-            BigDecimal monthRevenue = businessCalculationEngine.getSalesValue(shopId, monthStartDateTime, monthEndDateTime);
-            BigDecimal monthExpenses = businessCalculationEngine.getOperatingExpenses(shopId, monthStart, monthEnd);
-            BigDecimal monthProfit = businessCalculationEngine.getGrossProfit(shopId, monthStartDateTime, monthEndDateTime);
-            BigDecimal monthNetProfit = businessCalculationEngine.getNetProfit(shopId, monthStartDateTime, monthEndDateTime);
-            
+            String periodKey = monthNames[monthDate.getMonthValue() - 1] + " " + monthDate.getYear();
+            BigDecimal monthRevenue = revenueByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal monthExpenses = expensesByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal monthProfit = grossProfitByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal monthNetProfit = monthProfit.subtract(monthExpenses);
+
             yearlyOverview.add(FinancialDashboardResponse.YearlyOverviewData.builder()
-                    .month(months[monthDate.getMonthValue() - 1] + " " + monthDate.getYear())
+                    .month(periodKey)
                     .revenue(monthRevenue)
                     .expenses(monthExpenses)
                     .profit(monthProfit)
@@ -120,25 +149,41 @@ public class FinanceServiceImpl implements FinanceService {
                     .build());
         }
 
-        // Generate 5-year overview
-        List<FinancialDashboardResponse.YearlyOverviewData> fiveYearOverview = new ArrayList<>();
+        // ── 5-year overview ──
+        // Before: 5 years × 8 queries per year = ~40 SQL queries
+        // After: 2 SQL queries (1 vehicle GROUP BY + 1 expense GROUP BY) + in-memory merge
         int currentYear = today.getYear();
-        
+        LocalDate fiveYearStart = LocalDate.of(currentYear - 4, 1, 1);
+        LocalDate fiveYearEnd = LocalDate.of(currentYear, 12, 31);
+
+        List<Object[]> yearlySalesData = vehicleRepository.getYearlySalesProfitOverview(
+                shopId, fiveYearStart.atStartOfDay(), fiveYearEnd.atTime(23, 59, 59));
+        List<Object[]> yearlyExpenseData = expenseRepository.getYearlyExpenseOverview(
+                shopId, fiveYearStart, fiveYearEnd);
+
+        Map<String, BigDecimal> yearlyRevenueByPeriod = new HashMap<>();
+        Map<String, BigDecimal> yearlyGrossProfitByPeriod = new HashMap<>();
+        for (Object[] row : yearlySalesData) {
+            String period = (String) row[0];
+            yearlyRevenueByPeriod.put(period, toBigDecimal(row[1]));
+            yearlyGrossProfitByPeriod.put(period, toBigDecimal(row[2]));
+        }
+        Map<String, BigDecimal> yearlyExpensesByPeriod = new HashMap<>();
+        for (Object[] row : yearlyExpenseData) {
+            yearlyExpensesByPeriod.put((String) row[0], toBigDecimal(row[1]));
+        }
+
+        List<FinancialDashboardResponse.YearlyOverviewData> fiveYearOverview = new ArrayList<>();
         for (int i = 4; i >= 0; i--) {
             int year = currentYear - i;
-            LocalDate yearStart = LocalDate.of(year, 1, 1);
-            LocalDate yearEnd = LocalDate.of(year, 12, 31);
-            
-            LocalDateTime yearStartDateTime = yearStart.atStartOfDay();
-            LocalDateTime yearEndDateTime = yearEnd.atTime(23, 59, 59);
-            
-            BigDecimal yearRevenue = businessCalculationEngine.getSalesValue(shopId, yearStartDateTime, yearEndDateTime);
-            BigDecimal yearExpenses = businessCalculationEngine.getOperatingExpenses(shopId, yearStart, yearEnd);
-            BigDecimal yearProfit = businessCalculationEngine.getGrossProfit(shopId, yearStartDateTime, yearEndDateTime);
-            BigDecimal yearNetProfit = businessCalculationEngine.getNetProfit(shopId, yearStartDateTime, yearEndDateTime);
-            
+            String periodKey = String.valueOf(year);
+            BigDecimal yearRevenue = yearlyRevenueByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal yearExpenses = yearlyExpensesByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal yearProfit = yearlyGrossProfitByPeriod.getOrDefault(periodKey, BigDecimal.ZERO);
+            BigDecimal yearNetProfit = yearProfit.subtract(yearExpenses);
+
             fiveYearOverview.add(FinancialDashboardResponse.YearlyOverviewData.builder()
-                    .month(String.valueOf(year))
+                    .month(periodKey)
                     .revenue(yearRevenue)
                     .expenses(yearExpenses)
                     .profit(yearProfit)
@@ -160,6 +205,13 @@ public class FinanceServiceImpl implements FinanceService {
                 .yearlyOverview(yearlyOverview)
                 .fiveYearOverview(fiveYearOverview)
                 .build();
+    }
+
+    /** Safely convert an Object (Number or BigDecimal) to BigDecimal. */
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value == null) return BigDecimal.ZERO;
+        if (value instanceof BigDecimal) return (BigDecimal) value;
+        return new BigDecimal(((Number) value).longValue());
     }
 
     @Override
@@ -300,13 +352,16 @@ public class FinanceServiceImpl implements FinanceService {
         DateFilterUtil.DateRange dateRange = DateFilterUtil.getDateRange(filter);
         boolean isYearly = filter.equalsIgnoreCase("thisyear");
 
-        // Get profit data using BusinessCalculationEngine (single source of truth)
+        // Compute base values once, derive the rest in-memory (deduplicate KPI queries)
         BigDecimal revenue = businessCalculationEngine.getSalesValue(shopId, dateRange.getFrom(), dateRange.getTo());
         BigDecimal cogs = businessCalculationEngine.getCOGS(shopId, dateRange.getFrom(), dateRange.getTo());
-        BigDecimal grossProfit = businessCalculationEngine.getGrossProfit(shopId, dateRange.getFrom(), dateRange.getTo());
         BigDecimal operatingExpenses = businessCalculationEngine.getOperatingExpenses(shopId, dateRange.getFrom().toLocalDate(), dateRange.getTo().toLocalDate());
-        BigDecimal netProfit = businessCalculationEngine.getNetProfit(shopId, dateRange.getFrom(), dateRange.getTo());
-        BigDecimal profitMargin = businessCalculationEngine.getProfitMargin(shopId, dateRange.getFrom(), dateRange.getTo());
+        BigDecimal grossProfit = revenue.subtract(cogs);
+        BigDecimal netProfit = grossProfit.subtract(operatingExpenses);
+        BigDecimal profitMargin = BigDecimal.ZERO;
+        if (revenue.compareTo(BigDecimal.ZERO) != 0) {
+            profitMargin = grossProfit.divide(revenue, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
 
         ProfitResponse.ProfitBreakdown profitBreakdown = ProfitResponse.ProfitBreakdown.builder()
                 .revenue(revenue)

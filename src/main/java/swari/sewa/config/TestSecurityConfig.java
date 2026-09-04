@@ -1,5 +1,6 @@
 package swari.sewa.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -18,7 +19,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import swari.sewa.common.security.JwtAuthenticationFilter;
 import swari.sewa.common.security.UserDetailsServiceImpl;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -28,6 +31,9 @@ public class TestSecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final UserDetailsServiceImpl userDetailsService;
+
+    @Value("${spring.web.cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
 
     public TestSecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, UserDetailsServiceImpl userDetailsService) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
@@ -59,7 +65,15 @@ public class TestSecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
+
+        List<String> originList = new ArrayList<>();
+        for (String origin : allowedOrigins.split(",")) {
+            String trimmed = origin.trim();
+            if (!trimmed.isEmpty()) {
+                originList.add(trimmed);
+            }
+        }
+        configuration.setAllowedOrigins(originList);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);

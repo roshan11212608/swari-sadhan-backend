@@ -1,6 +1,7 @@
 package swari.sewa.module.employee.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -74,5 +75,13 @@ public class LeaveController {
             @PathVariable String status) {
         List<LeaveRequestDto> leaves = leaveService.getLeavesByStatus(shopId, status);
         return ResponseEntity.ok(leaves);
+    }
+
+    // ── Leave summary: status → count (for KPIs without loading ALL leaves) ──
+
+    @GetMapping("/shop/{shopId}/summary")
+    @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
+    public ResponseEntity<Map<String, Long>> getLeaveSummary(@PathVariable Long shopId) {
+        return ResponseEntity.ok(leaveService.getLeaveSummary(shopId));
     }
 }

@@ -11,6 +11,5 @@ public class ShopRegSendOtpRequest {
     @Email(message = "Invalid email format")
     private String email;
 
-    @NotBlank(message = "Mobile number is required")
     private String mobileNumber;
 }

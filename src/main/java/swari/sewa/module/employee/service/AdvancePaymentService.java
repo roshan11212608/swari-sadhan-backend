@@ -1,6 +1,7 @@
 package swari.sewa.module.employee.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import swari.sewa.module.employee.dto.AdvancePaymentDto;
@@ -25,4 +26,8 @@ public interface AdvancePaymentService {
     List<AdvancePaymentDto> getActiveAdvances(Long shopId);
     
     void calculateRecovery(AdvancePaymentDto advanceDto);
+
+    // ── Advance summary: totals + active count (for KPIs without loading ALL advances) ──
+
+    Map<String, Object> getAdvanceSummary(Long shopId);
 }

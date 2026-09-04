@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import swari.sewa.common.service.ImageType;
 import swari.sewa.common.service.StorageCategory;
 import swari.sewa.common.service.StorageService;
 
@@ -20,7 +21,7 @@ public class FileUploadController {
 
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> uploadFile(@RequestParam("file") MultipartFile file) {
-        String fileUrl = storageService.store(file, StorageCategory.MISC, null);
+        String fileUrl = storageService.store(file, StorageCategory.MISC, null, ImageType.MISC);
         String filename = fileUrl.substring(fileUrl.lastIndexOf('/') + 1);
 
         Map<String, String> response = new HashMap<>();

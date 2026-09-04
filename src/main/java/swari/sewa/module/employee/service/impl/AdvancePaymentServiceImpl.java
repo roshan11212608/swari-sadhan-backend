@@ -2,7 +2,9 @@ package swari.sewa.module.employee.service.impl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -179,5 +181,21 @@ public class AdvancePaymentServiceImpl implements AdvancePaymentService {
                 advancePayment.setMonthlyDeduction(monthlyDeduction);
             }
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Object> getAdvanceSummary(Long shopId) {
+        Map<String, Object> summary = new HashMap<>();
+        BigDecimal totalAdvanceGiven = advancePaymentRepository.sumAdvanceAmountByShopId(shopId);
+        BigDecimal recoveredAmount = advancePaymentRepository.sumRecoveredAmountByShopId(shopId);
+        BigDecimal pendingRecovery = advancePaymentRepository.sumRemainingBalanceByShopId(shopId);
+        Long activeRequests = advancePaymentRepository.countByShopIdAndStatus(shopId, "Pending");
+
+        summary.put("totalAdvanceGiven", totalAdvanceGiven != null ? totalAdvanceGiven : BigDecimal.ZERO);
+        summary.put("recoveredAmount", recoveredAmount != null ? recoveredAmount : BigDecimal.ZERO);
+        summary.put("pendingRecovery", pendingRecovery != null ? pendingRecovery : BigDecimal.ZERO);
+        summary.put("activeRequests", activeRequests != null ? activeRequests : 0L);
+        return summary;
     }
 }

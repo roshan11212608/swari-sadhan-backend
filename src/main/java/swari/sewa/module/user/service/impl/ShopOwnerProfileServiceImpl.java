@@ -276,7 +276,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
     @Transactional(readOnly = true)
     public Map<String, Object> getDashboardStats() {
         ShopOwner shopOwner = getCurrentShopOwner();
-        
+
         long totalShops = shopRepository.countByShopOwner_Id(shopOwner.getId());
         long activeShops = shopRepository.countByShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.ShopStatus.ACTIVE);
         long totalVehicles = vehicleRepository.countByShop_ShopOwner_Id(shopOwner.getId());
@@ -285,17 +285,18 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
         long totalEnquiries = enquiryRepository.countByShop_ShopOwner_Id(shopOwner.getId());
         long pendingEnquiries = enquiryRepository.countByShop_ShopOwner_IdAndStatus(shopOwner.getId(), swari.sewa.common.enums.EnquiryStatus.PENDING);
 
-        // Aggregate rating across all shops owned by this shop owner.
-        double rating = 0.0;
+        // Aggregate rating across ALL shops owned by this shop owner in a SINGLE query.
+        // Before: N+1 loop — for each shop: 2 queries (getAverageRatingByShopId + countByShopId)
+        // After: 1 aggregate query (COUNT + SUM joined with Shop on shopOwner.id)
+        Object[] ratingAgg = shopReviewRepository.aggregateRatingByShopOwnerId(shopOwner.getId());
         long ratingCount = 0;
-        for (Shop shop : shopRepository.findByShopOwnerId(shopOwner.getId())) {
-            double shopAvg = shopReviewRepository.getAverageRatingByShopId(shop.getId());
-            long shopReviews = shopReviewRepository.countByShopId(shop.getId());
-            rating += shopAvg * shopReviews;
-            ratingCount += shopReviews;
+        double ratingSum = 0.0;
+        if (ratingAgg != null && ratingAgg.length >= 2) {
+            ratingCount = ratingAgg[0] instanceof Number ? ((Number) ratingAgg[0]).longValue() : 0L;
+            ratingSum = ratingAgg[1] instanceof Number ? ((Number) ratingAgg[1]).doubleValue() : 0.0;
         }
-        double averageRating = ratingCount > 0 ? Math.round((rating / ratingCount) * 10.0) / 10.0 : 0.0;
-        
+        double averageRating = ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10.0) / 10.0 : 0.0;
+
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalShops", totalShops);
         stats.put("activeShops", activeShops);
@@ -306,7 +307,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
         stats.put("ratingCount", ratingCount);
         stats.put("totalEnquiries", totalEnquiries);
         stats.put("pendingEnquiries", pendingEnquiries);
-        
+
         return stats;
     }
 
@@ -315,17 +316,22 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
     public Map<String, Object> getBookings(int page, int size) {
         ShopOwner shopOwner = getCurrentShopOwner();
         Pageable pageable = PageRequest.of(page, size);
-        
-        Page<Enquiry> enquiries = enquiryRepository.findByShop_ShopOwner_Id(shopOwner.getId(), pageable);
-        
+
+        // Use JOIN FETCH variant to eliminate N+1 lazy loading of customer/vehicle.
+        // Before: findByShop_ShopOwner_Id → each enquiry.getCustomer()/getVehicle() triggers a separate query
+        // After: findByShopOwner_IdWithCustomerVehicleShop → customer/vehicle fetched in a single JOIN query
+        Page<Enquiry> enquiries = enquiryRepository.findByShopOwner_IdWithCustomerVehicleShop(shopOwner.getId(), pageable);
+
         Map<String, Object> result = new HashMap<>();
         result.put("bookings", enquiries.map(enquiry -> {
             Map<String, Object> booking = new HashMap<>();
             booking.put("id", enquiry.getId());
-            booking.put("customerName", enquiry.getCustomer().getFirstName() + " " + enquiry.getCustomer().getLastName());
-            booking.put("customerEmail", enquiry.getCustomer().getEmail());
-            booking.put("customerPhone", enquiry.getCustomer().getPhone());
-            booking.put("vehicleTitle", enquiry.getVehicle().getTitle());
+            booking.put("customerName", enquiry.getCustomer() != null
+                    ? enquiry.getCustomer().getFirstName() + " " + enquiry.getCustomer().getLastName()
+                    : enquiry.getCustomerName());
+            booking.put("customerEmail", enquiry.getCustomer() != null ? enquiry.getCustomer().getEmail() : enquiry.getCustomerEmail());
+            booking.put("customerPhone", enquiry.getCustomer() != null ? enquiry.getCustomer().getPhone() : null);
+            booking.put("vehicleTitle", enquiry.getVehicle() != null ? enquiry.getVehicle().getTitle() : null);
             booking.put("status", enquiry.getStatus());
             booking.put("message", enquiry.getMessage());
             booking.put("createdAt", enquiry.getCreatedAt());
@@ -333,7 +339,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
         }));
         result.put("totalPages", enquiries.getTotalPages());
         result.put("totalElements", enquiries.getTotalElements());
-        
+
         return result;
     }
 

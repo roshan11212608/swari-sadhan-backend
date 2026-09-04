@@ -29,6 +29,8 @@ import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 import swari.sewa.common.enums.ShopStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import swari.sewa.common.service.ImageType;
+import swari.sewa.common.service.MultipartUploadValidator;
 import swari.sewa.common.service.StorageCategory;
 import swari.sewa.common.service.StorageService;
 import java.util.HashMap;
@@ -39,12 +41,6 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/vehicles")
 @RequiredArgsConstructor
-@CrossOrigin(
-        origins = "http://localhost:3000",
-        allowedHeaders = "*",
-        methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS},
-        maxAge = 3600
-)
 public class VehicleController {
 
     private final VehicleService vehicleService;
@@ -54,6 +50,7 @@ public class VehicleController {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final StorageService storageService;
+    private final MultipartUploadValidator uploadValidator;
     private final swari.sewa.module.subscription.service.SubscriptionAccessService subscriptionAccessService;
 
     private boolean hasRole(Authentication authentication, String role) {
@@ -75,15 +72,9 @@ public class VehicleController {
             return null;
         }
         String email = authentication.getName();
-        ShopOwner shopOwner = shopOwnerRepository.findByEmail(email).orElse(null);
-        if (shopOwner == null || shopOwner.getId() == null) {
-            return null;
-        }
-        return shopRepository.findByShopOwnerId(shopOwner.getId())
-                .stream()
-                .findFirst()
-                .map(Shop::getId)
-                .orElse(null);
+        // Use lightweight projection: single query that returns only the shop ID
+        // via the shop_owner's email, instead of 2 queries (findByEmail + findByShopOwnerId)
+        return shopRepository.findShopIdByShopOwnerEmail(email).orElse(null);
     }
 
     /**
@@ -200,6 +191,8 @@ public class VehicleController {
                                           @RequestPart(value = "sellerCitizenshipBack", required = false) MultipartFile sellerCitizenshipBack,
                                           @RequestHeader(value = "X-Shop-Id", required = false) Long shopId) {
         try {
+            uploadValidator.validateFileCount("Vehicle photos", mediaFiles, MultipartUploadValidator.MAX_VEHICLE_MEDIA_FILES);
+            uploadValidator.validateFileCount("Bluebook photos", bluebookFiles, MultipartUploadValidator.MAX_VEHICLE_BLUEBOOK_FILES);
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             Long shopIdToUse = shopId;
 
@@ -296,7 +289,7 @@ public class VehicleController {
 
             // Handle file uploads
             if (mediaFiles != null && mediaFiles.length > 0) {
-                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, null);
+                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, null, ImageType.VEHICLE_PHOTO);
                 
                 // Set the first image as main image and add all to imageUrls
                 if (!imageUrls.isEmpty()) {
@@ -307,7 +300,7 @@ public class VehicleController {
 
             // Handle bluebook file uploads
             if (bluebookFiles != null && bluebookFiles.length > 0) {
-                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, null);
+                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, null, ImageType.VEHICLE_BLUEBOOK);
                 // Store bluebook URLs in specifications or as a separate field
                 // For now, we'll store them in the specifications JSON
                 String existingSpecs = vehicleDto.getSpecifications();
@@ -319,22 +312,27 @@ public class VehicleController {
 
             // Handle customer document uploads
             if (sellerPassportPhoto != null && !sellerPassportPhoto.isEmpty()) {
-                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, null);
+                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, null, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerPassportPhoto(passportPhotoUrl);
             }
 
             if (sellerCitizenshipFront != null && !sellerCitizenshipFront.isEmpty()) {
-                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, null);
+                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, null, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerCitizenshipFront(citizenshipFrontUrl);
             }
 
             if (sellerCitizenshipBack != null && !sellerCitizenshipBack.isEmpty()) {
-                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, null);
+                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, null, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerCitizenshipBack(citizenshipBackUrl);
             }
 
             VehicleDto createdVehicle = vehicleService.createVehicle(vehicleDto, shopIdToUse);
             return ResponseEntity.ok(createdVehicle);
+        } catch (swari.sewa.common.exception.StorageException e) {
+            return ResponseEntity.status(400).body(Map.of(
+                "error", "File upload failed",
+                "message", e.getMessage()
+            ));
         } catch (swari.sewa.module.subscription.exception.SubscriptionRequiredException
                 | swari.sewa.module.subscription.exception.SubscriptionLimitExceededException e) {
             // Let the GlobalExceptionHandler handle these with proper error codes
@@ -475,7 +473,7 @@ public class VehicleController {
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('SHOP_OWNER') or hasRole('SUPERADMIN')")
     @CacheEvict(value = "analyticsDashboard", allEntries = true)
-    public ResponseEntity<VehicleDto> updateVehicleWithFiles(
+    public ResponseEntity<?> updateVehicleWithFiles(
             @PathVariable Long id,
             @RequestPart(value = "vehicle", required = false) String vehicleJson,
             @RequestPart(value = "mediaFiles", required = false) MultipartFile[] mediaFiles,
@@ -490,6 +488,8 @@ public class VehicleController {
             @RequestPart(value = "deleteCitizenshipBack", required = false) String deleteCitizenshipBack,
             @RequestHeader(value = "X-Shop-Id", required = false) Long shopId) {
         try {
+            uploadValidator.validateFileCount("Vehicle photos", mediaFiles, MultipartUploadValidator.MAX_VEHICLE_MEDIA_FILES);
+            uploadValidator.validateFileCount("Bluebook photos", bluebookFiles, MultipartUploadValidator.MAX_VEHICLE_BLUEBOOK_FILES);
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             
             // Resolve shop ID
@@ -550,7 +550,7 @@ public class VehicleController {
             
             // Handle file uploads
             if (mediaFiles != null && mediaFiles.length > 0) {
-                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, id);
+                List<String> imageUrls = storageService.storeAll(mediaFiles, StorageCategory.VEHICLE, id, ImageType.VEHICLE_PHOTO);
                 if (!imageUrls.isEmpty()) {
                     Set<String> existingUrls = vehicleDto.getImageUrls() != null 
                         ? new HashSet<>(vehicleDto.getImageUrls()) 
@@ -564,7 +564,7 @@ public class VehicleController {
             }
 
             if (bluebookFiles != null && bluebookFiles.length > 0) {
-                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, id);
+                List<String> bluebookUrls = storageService.storeAll(bluebookFiles, StorageCategory.VEHICLE, id, ImageType.VEHICLE_BLUEBOOK);
                 String existingSpecs = vehicleDto.getSpecifications();
                 java.util.Map<String, Object> specs = existingSpecs != null 
                     ? objectMapper.readValue(existingSpecs, java.util.Map.class) 
@@ -576,17 +576,17 @@ public class VehicleController {
             }
 
             if (sellerPassportPhoto != null && !sellerPassportPhoto.isEmpty()) {
-                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, id);
+                String passportPhotoUrl = storageService.store(sellerPassportPhoto, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerPassportPhoto(passportPhotoUrl);
             }
 
             if (sellerCitizenshipFront != null && !sellerCitizenshipFront.isEmpty()) {
-                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, id);
+                String citizenshipFrontUrl = storageService.store(sellerCitizenshipFront, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerCitizenshipFront(citizenshipFrontUrl);
             }
 
             if (sellerCitizenshipBack != null && !sellerCitizenshipBack.isEmpty()) {
-                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, id);
+                String citizenshipBackUrl = storageService.store(sellerCitizenshipBack, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 vehicleDto.setSellerCitizenshipBack(citizenshipBackUrl);
             }
 
@@ -598,12 +598,17 @@ public class VehicleController {
             }
             
             return ResponseEntity.ok(updatedVehicle);
+        } catch (swari.sewa.common.exception.StorageException e) {
+            return ResponseEntity.status(400).body(Map.of(
+                "error", "File upload failed",
+                "message", e.getMessage()
+            ));
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to update vehicle");
             errorResponse.put("message", e.getMessage());
-            return ResponseEntity.status(500).body((VehicleDto) errorResponse);
+            return ResponseEntity.status(500).body(errorResponse);
         }
     }
 
@@ -736,17 +741,17 @@ public class VehicleController {
             
             // Store files and set URLs into DTO
             if (customerPhoto != null && !customerPhoto.isEmpty()) {
-                String url = storageService.store(customerPhoto, StorageCategory.VEHICLE, id);
+                String url = storageService.store(customerPhoto, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 customerData.setCustomerPhoto(url);
                 System.out.println("Customer photo stored: " + url);
             }
             if (citizenshipFrontPhoto != null && !citizenshipFrontPhoto.isEmpty()) {
-                String url = storageService.store(citizenshipFrontPhoto, StorageCategory.VEHICLE, id);
+                String url = storageService.store(citizenshipFrontPhoto, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 customerData.setCitizenshipFrontPhoto(url);
                 System.out.println("Citizenship front photo stored: " + url);
             }
             if (citizenshipBackPhoto != null && !citizenshipBackPhoto.isEmpty()) {
-                String url = storageService.store(citizenshipBackPhoto, StorageCategory.VEHICLE, id);
+                String url = storageService.store(citizenshipBackPhoto, StorageCategory.VEHICLE, id, ImageType.VEHICLE_DOCUMENT);
                 customerData.setCitizenshipBackPhoto(url);
                 System.out.println("Citizenship back photo stored: " + url);
             }
@@ -755,6 +760,11 @@ public class VehicleController {
             VehicleDto vehicle = vehicleService.markAsSold(id, customerData, shopIdToUse);
             System.out.println("Vehicle marked as sold successfully");
             return ResponseEntity.ok(vehicle);
+        } catch (swari.sewa.common.exception.StorageException e) {
+            return ResponseEntity.status(400).body(Map.of(
+                "error", "File upload failed",
+                "message", e.getMessage()
+            ));
         } catch (swari.sewa.module.subscription.exception.SubscriptionRequiredException
                 | swari.sewa.module.subscription.exception.SubscriptionLimitExceededException e) {
             // Let the GlobalExceptionHandler handle these with proper error codes

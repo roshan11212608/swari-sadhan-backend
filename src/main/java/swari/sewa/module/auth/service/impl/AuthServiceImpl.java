@@ -54,11 +54,17 @@ public class AuthServiceImpl implements AuthService {
      * which identity table it came from. This keeps the dual-table lookup
      * in ONE place until User/ShopOwner identities are merged into a single
      * users table (planned for the user-module migration step).
+     *
+     * <p>The {@code shopOwnerId} field carries the ShopOwner ID (when the
+     * account is a shop owner) so that the shop-ID lookup in
+     * {@link #buildLoginResponse} does not need to re-query the
+     * {@code shop_owners} table by email — the email was already used to
+     * load the ShopOwner in {@link #findAccountByEmail}.
      */
     private record Account(Long id, String email, String firstName, String lastName,
                            String role, boolean active, String passwordHash, String phone,
                            String customerCode, boolean mustChangePassword,
-                           String approvalStatus) {
+                           String approvalStatus, Long shopOwnerId) {
     }
 
     @Override
@@ -90,7 +96,7 @@ public class AuthServiceImpl implements AuthService {
                             owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(),
                             owner.getPhone(), null,
                             owner.getPasswordChanged() == null || !owner.getPasswordChanged(),
-                            owner.getApprovalStatus()));
+                            owner.getApprovalStatus(), owner.getId()));
             if (shopOwnerAccount.isPresent()
                     && passwordEncoder.matches(loginRequest.getPassword(), shopOwnerAccount.get().passwordHash())) {
                 account = shopOwnerAccount.get();
@@ -182,16 +188,20 @@ public class AuthServiceImpl implements AuthService {
         // application is allowed to re-apply, so the email is considered
         // available even if a mirrored users row exists from a previous
         // approval cycle. PENDING and APPROVED remain unavailable.
-        Optional<ShopOwner> ownerOpt = shopOwnerRepository.findByEmail(email);
-        if (ownerOpt.isPresent()) {
-            String status = ownerOpt.get().getApprovalStatus();
+        //
+        // Optimization: use a lightweight projection that fetches only the
+        // approval_status column instead of loading the entire ShopOwner
+        // entity (40+ columns including password hash, documents, etc.).
+        Optional<String> approvalStatusOpt = shopOwnerRepository.findApprovalStatusByEmail(email);
+        if (approvalStatusOpt.isPresent()) {
+            String status = approvalStatusOpt.get();
             if ("REJECTED".equals(status)) {
                 return false;
             }
             return true; // PENDING or APPROVED
         }
         // No shop owner record — fall back to the users table for public users
-        // and other roles.
+        // and other roles. existsByEmail is a COUNT query, not a full entity load.
         return userRepository.existsByEmail(email);
     }
 
@@ -208,43 +218,50 @@ public class AuthServiceImpl implements AuthService {
             // whether the temporary password has been replaced. Reading those
             // from the mirror would report "nothing to do" and let an owner
             // skip the forced password change (and skip approval gating).
-            Optional<ShopOwner> ownerRow =
-                    user.getRole() == UserRole.SHOP_OWNER
-                            ? shopOwnerRepository.findByEmail(email)
-                            : Optional.empty();
-            boolean mustChangePassword = ownerRow
-                    .map(o -> o.getPasswordChanged() == null || !o.getPasswordChanged())
-                    .orElse(false);
-            String approvalStatus = ownerRow.map(ShopOwner::getApprovalStatus)
-                    .orElse(null);
+            Long shopOwnerId = null;
+            boolean mustChangePassword = false;
+            String approvalStatus = null;
+            if (user.getRole() == UserRole.SHOP_OWNER) {
+                Optional<ShopOwner> ownerRow = shopOwnerRepository.findByEmail(email);
+                if (ownerRow.isPresent()) {
+                    ShopOwner owner = ownerRow.get();
+                    shopOwnerId = owner.getId();
+                    mustChangePassword = owner.getPasswordChanged() == null || !owner.getPasswordChanged();
+                    approvalStatus = owner.getApprovalStatus();
+                }
+            }
             return Optional.of(new Account(user.getId(), user.getEmail(), user.getFirstName(),
                     user.getLastName(), user.getRole().name(), user.getActive(), user.getPassword(),
-                    user.getPhoneNumber(), user.getCustomerCode(), mustChangePassword, approvalStatus));
+                    user.getPhoneNumber(), user.getCustomerCode(), mustChangePassword, approvalStatus,
+                    shopOwnerId));
         }
         return shopOwnerRepository.findByEmail(email)
                 .map(owner -> new Account(owner.getId(), owner.getEmail(), owner.getFirstName(),
                         owner.getLastName(), owner.getRole().name(), owner.isActive(), owner.getPassword(),
                         owner.getPhone(), null,
                         owner.getPasswordChanged() == null || !owner.getPasswordChanged(),
-                        owner.getApprovalStatus()));
+                        owner.getApprovalStatus(), owner.getId()));
     }
 
     private Optional<Account> findAccountByMobile(String mobile) {
         return userRepository.findByPhoneNumber(mobile)
                 .map(user -> {
-                    Optional<ShopOwner> ownerRow =
-                            user.getRole() == UserRole.SHOP_OWNER && user.getEmail() != null
-                                    ? shopOwnerRepository.findByEmail(user.getEmail())
-                                    : Optional.empty();
-                    boolean mustChangePassword = ownerRow
-                            .map(o -> o.getPasswordChanged() == null || !o.getPasswordChanged())
-                            .orElse(false);
-                    String approvalStatus = ownerRow.map(ShopOwner::getApprovalStatus)
-                            .orElse(null);
+                    Long shopOwnerId = null;
+                    boolean mustChangePassword = false;
+                    String approvalStatus = null;
+                    if (user.getRole() == UserRole.SHOP_OWNER && user.getEmail() != null) {
+                        Optional<ShopOwner> ownerRow = shopOwnerRepository.findByEmail(user.getEmail());
+                        if (ownerRow.isPresent()) {
+                            ShopOwner owner = ownerRow.get();
+                            shopOwnerId = owner.getId();
+                            mustChangePassword = owner.getPasswordChanged() == null || !owner.getPasswordChanged();
+                            approvalStatus = owner.getApprovalStatus();
+                        }
+                    }
                     return new Account(user.getId(), user.getEmail(), user.getFirstName(),
                             user.getLastName(), user.getRole().name(), user.getActive(),
                             user.getPassword(), user.getPhoneNumber(), user.getCustomerCode(),
-                            mustChangePassword, approvalStatus);
+                            mustChangePassword, approvalStatus, shopOwnerId);
                 });
     }
 
@@ -293,14 +310,13 @@ public class AuthServiceImpl implements AuthService {
 
     private LoginResponse buildLoginResponse(Account account, String accessToken, String refreshToken) {
         Long shopId = null;
-        // If the account is a shop owner, fetch their shop ID
-        if ("SHOP_OWNER".equals(account.role()) && account.email() != null) {
-            shopId = shopOwnerRepository.findByEmail(account.email())
-                    .map(owner -> {
-                        List<swari.sewa.module.shop.entity.Shop> shops = shopRepository.findByShopOwnerId(owner.getId());
-                        return shops.isEmpty() ? null : shops.get(0).getId();
-                    })
-                    .orElse(null);
+        // If the account is a shop owner, fetch their shop ID using the
+        // shopOwnerId already loaded during findAccountByEmail — no need to
+        // re-query shop_owners by email. Uses a lightweight ID-only projection
+        // instead of loading full Shop entities.
+        if ("SHOP_OWNER".equals(account.role()) && account.shopOwnerId() != null) {
+            List<Long> shopIds = shopRepository.findShopIdsByShopOwnerId(account.shopOwnerId());
+            shopId = shopIds.isEmpty() ? null : shopIds.get(0);
         }
 
         return LoginResponse.builder()

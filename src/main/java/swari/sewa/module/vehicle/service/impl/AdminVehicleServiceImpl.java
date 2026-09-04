@@ -30,18 +30,17 @@ public class AdminVehicleServiceImpl implements AdminVehicleService {
     @Transactional(readOnly = true)
     public Page<Object> getAllVehicles(Pageable pageable, String search, String status, String type) {
         Page<Vehicle> vehicles;
-        
+
         if (search != null && !search.trim().isEmpty()) {
-            vehicles = vehicleRepository.findByTitleContainingIgnoreCaseOrDescriptionContainingIgnoreCase(
-                    search, search, pageable);
+            vehicles = vehicleRepository.searchByKeywordWithShop(search, pageable);
         } else if (status != null && !status.trim().isEmpty()) {
             VehicleStatus vehicleStatus = VehicleStatus.valueOf(status.toUpperCase());
-            vehicles = vehicleRepository.findByStatus(vehicleStatus, pageable);
+            vehicles = vehicleRepository.findByStatusWithShop(vehicleStatus, pageable);
         } else if (type != null && !type.trim().isEmpty()) {
             VehicleType vehicleType = VehicleType.valueOf(type.toUpperCase());
-            vehicles = vehicleRepository.findByType(vehicleType, pageable);
+            vehicles = vehicleRepository.findByTypeWithShop(vehicleType, pageable);
         } else {
-            vehicles = vehicleRepository.findAll(pageable);
+            vehicles = vehicleRepository.findAllWithShop(pageable);
         }
         
         return vehicles.map(vehicle -> {
@@ -156,7 +155,7 @@ public class AdminVehicleServiceImpl implements AdminVehicleService {
     @Override
     @Transactional(readOnly = true)
     public Page<Object> getPendingVehicles(Pageable pageable) {
-        return vehicleRepository.findByStatus(VehicleStatus.PENDING_APPROVAL, pageable)
+        return vehicleRepository.findByStatusWithShop(VehicleStatus.PENDING_APPROVAL, pageable)
                 .map(vehicle -> {
                     Map<String, Object> vehicleData = new HashMap<>();
                     vehicleData.put("id", vehicle.getId());

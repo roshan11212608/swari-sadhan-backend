@@ -23,6 +23,12 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     @Query("SELECT s FROM Shop s WHERE s.shopOwner.email = :email")
     Optional<Shop> findByShopOwnerEmail(@Param("email") String email);
 
+    /** Lightweight projection: returns only the shop ID for a shop owner's email,
+     *  avoiding loading the full Shop entity. Used by VehicleController for
+     *  per-request shop resolution (replaces 2 queries with 1). */
+    @Query("SELECT s.id FROM Shop s WHERE s.shopOwner.email = :email")
+    Optional<Long> findShopIdByShopOwnerEmail(@Param("email") String email);
+
     @Query("SELECT s.id FROM Shop s WHERE s.user.email = :email")
     Optional<Long> findShopIdByUserEmail(@Param("email") String email);
     
@@ -41,10 +47,22 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     
     @Query("SELECT COUNT(s) FROM Shop s WHERE s.shopOwner.id = :shopOwnerId AND s.status = :status")
     long countByShopOwner_IdAndStatus(@Param("shopOwnerId") Long shopOwnerId, @Param("status") ShopStatus status);
+
+    /** Lightweight projection: returns only shop IDs for a shop owner, avoiding
+     *  loading full Shop entities when only the ID is needed (e.g. login response). */
+    @Query("SELECT s.id FROM Shop s WHERE s.shopOwner.id = :shopOwnerId")
+    List<Long> findShopIdsByShopOwnerId(@Param("shopOwnerId") Long shopOwnerId);
     
     List<Shop> findByStatus(ShopStatus status);
     
     Page<Shop> findByStatus(ShopStatus status, Pageable pageable);
+
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner WHERE s.status = :status")
+    Page<Shop> findByStatusWithShopOwner(@Param("status") ShopStatus status, Pageable pageable);
+
+    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner " +
+           "WHERE s.name LIKE %:keyword% OR s.addressLine1 LIKE %:keyword%")
+    Page<Shop> searchByKeywordWithShopOwnerPaged(@Param("keyword") String keyword, Pageable pageable);
     
     Page<Shop> findByNameContainingIgnoreCaseOrAddressContainingIgnoreCase(String name, String address, Pageable pageable);
     
@@ -87,7 +105,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.isFeatured = true AND s.status = 'ACTIVE'")
     List<Shop> findFeaturedShopsWithShopOwner();
     
-    @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.isFeatured = true AND s.status = 'ACTIVE'")
+    @Query(value = "SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.isFeatured = true AND s.status = 'ACTIVE'",
+            countQuery = "SELECT count(s) FROM Shop s WHERE s.isFeatured = true AND s.status = 'ACTIVE'")
     org.springframework.data.domain.Page<Shop> findFeaturedShopsWithShopOwner(org.springframework.data.domain.Pageable pageable);
     
     @Query("SELECT s FROM Shop s LEFT JOIN FETCH s.shopOwner LEFT JOIN FETCH s.user WHERE s.name LIKE %:keyword% OR s.description LIKE %:keyword%")

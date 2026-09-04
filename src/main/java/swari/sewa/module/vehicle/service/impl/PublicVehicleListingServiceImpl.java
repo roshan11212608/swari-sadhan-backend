@@ -17,6 +17,7 @@ import swari.sewa.module.vehicle.repository.PublicVehicleListingRepository;
 import swari.sewa.module.vehicle.repository.PublicVehicleListingReviewHistoryRepository;
 import swari.sewa.module.vehicle.repository.PublicVehicleListingSequenceRepository;
 import swari.sewa.module.vehicle.service.PublicVehicleListingService;
+import swari.sewa.common.service.MultipartUploadValidator;
 import swari.sewa.module.user.entity.User;
 import swari.sewa.module.user.repository.UserRepository;
 
@@ -27,6 +28,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +41,7 @@ public class PublicVehicleListingServiceImpl implements PublicVehicleListingServ
     private final PublicVehicleListingSequenceRepository sequenceRepository;
     private final PublicVehicleListingReviewHistoryRepository reviewHistoryRepository;
     private final UserRepository userRepository;
+    private final MultipartUploadValidator uploadValidator;
 
     private static final List<PublicVehicleListingStatus> ACTIVE_STATUSES = List.of(
             PublicVehicleListingStatus.SUBMITTED,
@@ -397,6 +400,29 @@ public class PublicVehicleListingServiceImpl implements PublicVehicleListingServ
             return;
         }
 
+        long vehiclePhotoCount = fileDtos.stream()
+                .filter(f -> f.getFileType() == PublicVehicleListingFileType.VEHICLE_PHOTO)
+                .count();
+        long bluebookCount = fileDtos.stream()
+                .filter(f -> f.getFileType() == PublicVehicleListingFileType.BLUEBOOK)
+                .count();
+        long citizenshipCount = fileDtos.stream()
+                .filter(f -> f.getFileType() == PublicVehicleListingFileType.CITIZENSHIP)
+                .count();
+
+        if (vehiclePhotoCount > MultipartUploadValidator.MAX_PUBLIC_VEHICLE_PHOTOS) {
+            throw new IllegalArgumentException(
+                    "Public vehicle listings accept at most " + MultipartUploadValidator.MAX_PUBLIC_VEHICLE_PHOTOS + " vehicle photos.");
+        }
+        if (bluebookCount > MultipartUploadValidator.MAX_PUBLIC_BLUEBOOK_FILES) {
+            throw new IllegalArgumentException(
+                    "Public vehicle listings accept at most " + MultipartUploadValidator.MAX_PUBLIC_BLUEBOOK_FILES + " bluebook files.");
+        }
+        if (citizenshipCount > MultipartUploadValidator.MAX_PUBLIC_CITIZENSHIP_FILES) {
+            throw new IllegalArgumentException(
+                    "Public vehicle listings accept at most " + MultipartUploadValidator.MAX_PUBLIC_CITIZENSHIP_FILES + " citizenship/ID file.");
+        }
+
         for (int i = 0; i < fileDtos.size(); i++) {
             PublicVehicleListingFileDto fd = fileDtos.get(i);
             PublicVehicleListingFile file = new PublicVehicleListingFile();
@@ -633,15 +659,14 @@ public class PublicVehicleListingServiceImpl implements PublicVehicleListingServ
         String sellerAccountName = null;
         String sellerAccountPhone = null;
         if (listing.getSellerUserId() != null) {
-            sellerAccountName = userRepository.findById(listing.getSellerUserId())
-                    .map(u -> u.getFirstName() + " " + u.getLastName())
-                    .orElse(null);
-            sellerAccountPhone = userRepository.findById(listing.getSellerUserId())
-                    .map(User::getPhoneNumber)
-                    .orElse(null);
-            sellerEmail = userRepository.findById(listing.getSellerUserId())
-                    .map(User::getEmail)
-                    .orElse(null);
+            // Single DB lookup instead of 3 separate findById calls
+            Optional<User> sellerOpt = userRepository.findById(listing.getSellerUserId());
+            if (sellerOpt.isPresent()) {
+                User seller = sellerOpt.get();
+                sellerAccountName = seller.getFirstName() + " " + seller.getLastName();
+                sellerAccountPhone = seller.getPhoneNumber();
+                sellerEmail = seller.getEmail();
+            }
         }
         return PublicVehicleListingAdminDto.builder()
                 .id(listing.getId())

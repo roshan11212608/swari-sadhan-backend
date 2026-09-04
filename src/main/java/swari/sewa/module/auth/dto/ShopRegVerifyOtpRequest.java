@@ -12,7 +12,6 @@ public class ShopRegVerifyOtpRequest {
     @Email(message = "Invalid email format")
     private String email;
 
-    @NotBlank(message = "Mobile number is required")
     private String mobileNumber;
 
     @NotBlank(message = "Email OTP is required")

@@ -331,6 +331,14 @@ public class SubscriptionPlanServiceImpl implements SubscriptionPlanService {
         return findPlanById(id);
     }
 
+    @Override
+    @Transactional(readOnly = true
+    )
+    public java.util.List<SubscriptionPlan> findAllById(java.util.Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return java.util.Collections.emptyList();
+        return planRepository.findAllById(ids);
+    }
+
     // ==============================
     // Private helper methods
     // ==============================

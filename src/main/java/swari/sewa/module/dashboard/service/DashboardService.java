@@ -6,8 +6,11 @@ import swari.sewa.module.dashboard.dto.DashboardStatsDto;
 import swari.sewa.module.dashboard.dto.ShopOwnerDto;
 import swari.sewa.module.dashboard.dto.UserManagementDto;
 import swari.sewa.module.dashboard.dto.CredentialsDto;
+import swari.sewa.module.dashboard.dto.ShopDashboardSummaryDto;
 
 public interface DashboardService {
+
+    ShopDashboardSummaryDto getShopDashboardSummary(Long shopId);
     
     DashboardStatsDto getDashboardStats();
     

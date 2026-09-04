@@ -43,9 +43,7 @@ public class EnquiryServiceImpl implements EnquiryService {
         Vehicle vehicle = vehicleRepository.findById(enquiryDto.getVehicleId())
                 .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + enquiryDto.getVehicleId()));
 
-        Shop shop = vehicleRepository.findById(enquiryDto.getVehicleId())
-                .map(v -> v.getShop())
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for vehicle"));
+        Shop shop = vehicle.getShop();
 
         // Create enquiry manually to avoid ModelMapper issues with transient User objects
         Enquiry enquiry = new Enquiry();
@@ -78,7 +76,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Override
     @Transactional(readOnly = true)
     public Optional<EnquiryDto> getEnquiryById(Long id) {
-        return enquiryRepository.findById(id)
+        return enquiryRepository.findByIdWithCustomerVehicleShop(id)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -86,7 +84,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> getAllEnquiries(int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.findAll(pageable)
+        return enquiryRepository.findAllWithCustomerVehicleShop(pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -94,7 +92,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> getEnquiriesByCustomer(Long customerId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.findByCustomerId(customerId, pageable)
+        return enquiryRepository.findByCustomerIdWithCustomerVehicleShop(customerId, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -102,7 +100,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> getEnquiriesByShop(Long shopId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.findByShopId(shopId, pageable)
+        return enquiryRepository.findByShopIdWithCustomerVehicleShop(shopId, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -110,7 +108,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> getEnquiriesByVehicle(Long vehicleId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.findByVehicleId(vehicleId, pageable)
+        return enquiryRepository.findByVehicleIdWithCustomerVehicleShop(vehicleId, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -118,14 +116,14 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> getEnquiriesByStatus(EnquiryStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.findByStatus(status, pageable)
+        return enquiryRepository.findByStatusWithCustomerVehicleShop(status, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<EnquiryDto> getPendingEnquiriesByShop(Long shopId) {
-        return enquiryRepository.findByShopIdAndStatus(shopId, EnquiryStatus.PENDING).stream()
+        return enquiryRepository.findByShopIdAndStatusWithCustomerVehicleShop(shopId, EnquiryStatus.PENDING).stream()
                 .map(this::mapToDtoWithDetails)
                 .collect(Collectors.toList());
     }
@@ -183,7 +181,7 @@ public class EnquiryServiceImpl implements EnquiryService {
     @Transactional(readOnly = true)
     public Page<EnquiryDto> searchEnquiries(String keyword, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return enquiryRepository.searchByKeyword(keyword, pageable)
+        return enquiryRepository.searchByKeywordWithCustomerVehicleShop(keyword, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 

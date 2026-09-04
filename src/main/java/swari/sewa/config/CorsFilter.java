@@ -1,5 +1,6 @@
 package swari.sewa.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -15,12 +16,17 @@ import java.io.IOException;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorsFilter implements Filter {
 
+    @Value("${spring.web.cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
+
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) throws IOException, ServletException {
         HttpServletResponse response = (HttpServletResponse) res;
         HttpServletRequest request = (HttpServletRequest) req;
 
-        response.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+        // Use the first allowed origin from the comma-separated list
+        String origin = allowedOrigins.split(",")[0].trim();
+        response.setHeader("Access-Control-Allow-Origin", origin);
         response.setHeader("Access-Control-Allow-Credentials", "true");
         response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
         String requestedHeaders = request.getHeader("Access-Control-Request-Headers");

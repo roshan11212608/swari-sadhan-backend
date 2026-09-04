@@ -37,11 +37,17 @@ public class WishlistServiceImpl implements WishlistService {
             throw new WishlistAlreadyExistsException("Vehicle already in wishlist");
         }
 
-        User customer = userRepository.findById(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Customer not found with id: " + customerId));
+        // Use getReference (proxy) instead of findById to avoid loading full entities
+        // when only the foreign key is needed for the save operation.
+        if (!userRepository.existsById(customerId)) {
+            throw new ResourceNotFoundException("Customer not found with id: " + customerId);
+        }
+        if (!vehicleRepository.existsById(vehicleId)) {
+            throw new ResourceNotFoundException("Vehicle not found with id: " + vehicleId);
+        }
 
-        Vehicle vehicle = vehicleRepository.findById(vehicleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found with id: " + vehicleId));
+        User customer = userRepository.getReferenceById(customerId);
+        Vehicle vehicle = vehicleRepository.getReferenceById(vehicleId);
 
         Wishlist wishlist = Wishlist.builder()
                 .customer(customer)
@@ -49,7 +55,10 @@ public class WishlistServiceImpl implements WishlistService {
                 .build();
 
         Wishlist savedWishlist = wishlistRepository.save(wishlist);
-        return mapToDtoWithDetails(savedWishlist);
+        // Re-load with JOIN FETCH to populate DTO fields without lazy-load N+1
+        return wishlistRepository.findByIdWithCustomerVehicleShop(savedWishlist.getId())
+                .map(this::mapToDtoWithDetails)
+                .orElse(mapToDtoWithDetails(savedWishlist));
     }
 
     @Override
@@ -62,7 +71,7 @@ public class WishlistServiceImpl implements WishlistService {
     @Override
     @Transactional(readOnly = true)
     public Optional<WishlistDto> getWishlistById(Long id) {
-        return wishlistRepository.findById(id)
+        return wishlistRepository.findByIdWithCustomerVehicleShop(id)
                 .map(this::mapToDtoWithDetails);
     }
 
@@ -70,14 +79,14 @@ public class WishlistServiceImpl implements WishlistService {
     @Transactional(readOnly = true)
     public Page<WishlistDto> getCustomerWishlist(Long customerId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        return wishlistRepository.findByCustomer_Id(customerId, pageable)
+        return wishlistRepository.findByCustomer_IdWithCustomerVehicleShop(customerId, pageable)
                 .map(this::mapToDtoWithDetails);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<WishlistDto> getCustomerWishlist(Long customerId) {
-        return wishlistRepository.findByCustomer_Id(customerId).stream()
+        return wishlistRepository.findByCustomer_IdWithCustomerVehicleShop(customerId).stream()
                 .map(this::mapToDtoWithDetails)
                 .collect(Collectors.toList());
     }
@@ -85,7 +94,7 @@ public class WishlistServiceImpl implements WishlistService {
     @Override
     @Transactional(readOnly = true)
     public List<WishlistDto> getShopWishlist(Long shopId) {
-        return wishlistRepository.findByVehicle_Shop_Id(shopId).stream()
+        return wishlistRepository.findByVehicle_Shop_IdWithCustomerVehicleShop(shopId).stream()
                 .map(this::mapToDtoWithDetails)
                 .collect(Collectors.toList());
     }
@@ -114,8 +123,11 @@ public class WishlistServiceImpl implements WishlistService {
         Wishlist wishlist = wishlistRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Wishlist not found with id: " + id));
         wishlist.setRemark(remark);
-        Wishlist saved = wishlistRepository.save(wishlist);
-        return mapToDtoWithDetails(saved);
+        wishlistRepository.save(wishlist);
+        // Re-load with JOIN FETCH to populate DTO fields without lazy-load N+1
+        return wishlistRepository.findByIdWithCustomerVehicleShop(id)
+                .map(this::mapToDtoWithDetails)
+                .orElse(mapToDtoWithDetails(wishlist));
     }
 
     private WishlistDto mapToDtoWithDetails(Wishlist wishlist) {

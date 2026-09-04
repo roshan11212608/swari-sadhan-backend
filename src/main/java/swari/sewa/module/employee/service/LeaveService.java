@@ -1,6 +1,7 @@
 package swari.sewa.module.employee.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import swari.sewa.module.employee.dto.LeaveRequestDto;
@@ -23,4 +24,8 @@ public interface LeaveService {
     List<LeaveRequestDto> getLeavesByStatus(Long shopId, String status);
     
     void calculateLeaveDuration(LeaveRequestRequestDto requestDto);
+
+    // ── Leave summary: status → count (for KPIs without loading ALL leaves) ──
+
+    Map<String, Long> getLeaveSummary(Long shopId);
 }

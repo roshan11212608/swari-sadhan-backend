@@ -16,12 +16,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/superadmin/public-vehicle-listings")
 @RequiredArgsConstructor
-@CrossOrigin(
-        origins = "http://localhost:3000",
-        allowedHeaders = "*",
-        methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS},
-        maxAge = 3600
-)
 public class AdminPublicVehicleListingController {
 
     private final PublicVehicleListingService listingService;

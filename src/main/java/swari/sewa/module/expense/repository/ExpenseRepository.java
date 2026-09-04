@@ -32,6 +32,11 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     
     Page<Expense> findByShopIdAndIsActiveTrue(Long shopId, Pageable pageable);
 
+    // JOIN FETCH variant — eliminates N+1 on shop, category, attachments in list endpoints
+    @Query("SELECT e FROM Expense e LEFT JOIN FETCH e.shop LEFT JOIN FETCH e.category LEFT JOIN FETCH e.attachments " +
+           "WHERE e.shop.id = :shopId AND e.isActive = true")
+    Page<Expense> findByShopIdAndIsActiveTrueWithDetails(@Param("shopId") Long shopId, Pageable pageable);
+
     Optional<Expense> findByReferenceNumber(String referenceNumber);
     
     @Query("SELECT e FROM Expense e WHERE e.shop.id = :shopId AND e.isActive = true " +
@@ -55,13 +60,46 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
         @Param("maxAmount") BigDecimal maxAmount,
         Pageable pageable
     );
-    
+
+    // JOIN FETCH variant of findByFilters — eliminates N+1 on shop, category, attachments
+    @Query("SELECT e FROM Expense e LEFT JOIN FETCH e.shop LEFT JOIN FETCH e.category LEFT JOIN FETCH e.attachments " +
+           "WHERE e.shop.id = :shopId AND e.isActive = true " +
+           "AND (:title IS NULL OR LOWER(e.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +
+           "AND (:categoryId IS NULL OR e.category.id = :categoryId) " +
+           "AND (:paymentStatus IS NULL OR e.paymentStatus = :paymentStatus) " +
+           "AND (:paymentMethod IS NULL OR e.paymentMethod = :paymentMethod) " +
+           "AND (:startDate IS NULL OR e.expenseDate >= :startDate) " +
+           "AND (:endDate IS NULL OR e.expenseDate <= :endDate) " +
+           "AND (:minAmount IS NULL OR e.amount >= :minAmount) " +
+           "AND (:maxAmount IS NULL OR e.amount <= :maxAmount)")
+    Page<Expense> findByFiltersWithDetails(
+        @Param("shopId") Long shopId,
+        @Param("title") String title,
+        @Param("categoryId") Long categoryId,
+        @Param("paymentStatus") String paymentStatus,
+        @Param("paymentMethod") String paymentMethod,
+        @Param("startDate") LocalDate startDate,
+        @Param("endDate") LocalDate endDate,
+        @Param("minAmount") BigDecimal minAmount,
+        @Param("maxAmount") BigDecimal maxAmount,
+        Pageable pageable
+    );
+
     @Query("SELECT e FROM Expense e WHERE e.shop.id = :shopId AND e.isActive = true " +
            "AND (LOWER(e.title) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
            "OR LOWER(e.category.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
            "OR LOWER(e.vendorPaidTo) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
            "OR LOWER(e.referenceNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')))")
     Page<Expense> searchExpenses(@Param("shopId") Long shopId, @Param("searchTerm") String searchTerm, Pageable pageable);
+
+    // JOIN FETCH variant of searchExpenses — eliminates N+1 on shop, category, attachments
+    @Query("SELECT e FROM Expense e LEFT JOIN FETCH e.shop LEFT JOIN FETCH e.category LEFT JOIN FETCH e.attachments " +
+           "WHERE e.shop.id = :shopId AND e.isActive = true " +
+           "AND (LOWER(e.title) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
+           "OR LOWER(e.category.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
+           "OR LOWER(e.vendorPaidTo) LIKE LOWER(CONCAT('%', :searchTerm, '%')) " +
+           "OR LOWER(e.referenceNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')))")
+    Page<Expense> searchExpensesWithDetails(@Param("shopId") Long shopId, @Param("searchTerm") String searchTerm, Pageable pageable);
     
     @Query("SELECT SUM(e.amount) FROM Expense e WHERE e.shop.id = :shopId AND e.isActive = true AND e.expenseDate = :date")
     Optional<BigDecimal> sumByShopIdAndExpenseDate(@Param("shopId") Long shopId, @Param("date") LocalDate date);
@@ -76,6 +114,12 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("SELECT e FROM Expense e WHERE e.shop.id = :shopId AND e.isActive = true AND e.paymentStatus IN ('PENDING', 'PARTIALLY_PAID') " +
            "ORDER BY e.dueDate ASC NULLS LAST")
     List<Expense> findUpcomingPayments(@Param("shopId") Long shopId, Pageable pageable);
+
+    // JOIN FETCH variant of findUpcomingPayments — eliminates N+1 on shop, category, attachments
+    @Query("SELECT e FROM Expense e LEFT JOIN FETCH e.shop LEFT JOIN FETCH e.category LEFT JOIN FETCH e.attachments " +
+           "WHERE e.shop.id = :shopId AND e.isActive = true AND e.paymentStatus IN ('PENDING', 'PARTIALLY_PAID') " +
+           "ORDER BY e.dueDate ASC NULLS LAST")
+    List<Expense> findUpcomingPaymentsWithDetails(@Param("shopId") Long shopId, Pageable pageable);
     
     @Query(value = "SELECT CONCAT('EXP-', YEAR(CURDATE()), '-', LPAD(COALESCE(MAX(CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(expense_number, '-', -1), '-', 1) AS UNSIGNED)), 0) + 1, 6, '0')) FROM expenses WHERE expense_number LIKE CONCAT('EXP-', YEAR(CURDATE()), '-%') FOR UPDATE", nativeQuery = true)
     String generateNextExpenseNumber();
@@ -142,4 +186,22 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
            "WHERE e.shop_id = :shopId AND e.expense_date BETWEEN :startDate AND :endDate AND e.is_active = true AND ec.is_active = true " +
            "GROUP BY ec.id, ec.name, ec.color", nativeQuery = true)
     List<Object[]> getExpenseCategories(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    // ==================== OVERVIEW QUERIES (multi-year safe) ====================
+
+    @Query(value = "SELECT " +
+           "CONCAT(SUBSTRING(MONTHNAME(e.expense_date), 1, 3), ' ', YEAR(e.expense_date)) as period, " +
+           "COALESCE(SUM(e.amount), 0) as expenses " +
+           "FROM expenses e " +
+           "WHERE e.shop_id = :shopId AND e.expense_date BETWEEN :startDate AND :endDate AND e.is_active = true " +
+           "GROUP BY period ORDER BY period", nativeQuery = true)
+    List<Object[]> getMonthlyExpenseOverview(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    @Query(value = "SELECT " +
+           "CAST(YEAR(e.expense_date) AS CHAR) as period, " +
+           "COALESCE(SUM(e.amount), 0) as expenses " +
+           "FROM expenses e " +
+           "WHERE e.shop_id = :shopId AND e.expense_date BETWEEN :startDate AND :endDate AND e.is_active = true " +
+           "GROUP BY period ORDER BY period", nativeQuery = true)
+    List<Object[]> getYearlyExpenseOverview(@Param("shopId") Long shopId, @Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 }

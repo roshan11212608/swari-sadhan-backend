@@ -1,6 +1,7 @@
 package swari.sewa.module.employee.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -96,5 +97,39 @@ public class EmployeeController {
         Page<EmployeeDto> employees = employeeService.filterEmployees(shopId, status, department, employmentType,
                 org.springframework.data.domain.PageRequest.of(page, size));
         return ResponseEntity.ok(employees);
+    }
+
+    // ── Combined search + filter + pagination (replaces /all + client-side filtering) ──
+
+    @GetMapping("/shop/{shopId}/search-filter")
+    @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
+    public ResponseEntity<Page<EmployeeDto>> searchAndFilterEmployees(
+            @PathVariable Long shopId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String department,
+            @RequestParam(required = false) String employmentType,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Page<EmployeeDto> employees = employeeService.searchAndFilterEmployees(
+                shopId, search, status, department, employmentType,
+                org.springframework.data.domain.PageRequest.of(page, size));
+        return ResponseEntity.ok(employees);
+    }
+
+    // ── Filter options for dropdowns (replaces deriving from ALL employees in JS) ──
+
+    @GetMapping("/shop/{shopId}/filter-options")
+    @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
+    public ResponseEntity<Map<String, List<String>>> getFilterOptions(@PathVariable Long shopId) {
+        return ResponseEntity.ok(employeeService.getFilterOptions(shopId));
+    }
+
+    // ── Next employee number (replaces loading ALL employees to compute max in JS) ──
+
+    @GetMapping("/shop/{shopId}/next-number")
+    @PreAuthorize("hasRole('SHOP_OWNER') and @shopSecurity.isOwner(#shopId, authentication.name)")
+    public ResponseEntity<Map<String, String>> getNextEmployeeNumber(@PathVariable Long shopId) {
+        return ResponseEntity.ok(Map.of("employeeNumber", employeeService.generateEmployeeNumber(shopId)));
     }
 }

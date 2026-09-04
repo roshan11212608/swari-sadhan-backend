@@ -24,12 +24,6 @@ import swari.sewa.module.vehicle.service.SellVehicleApplicationService;
 @RestController
 @RequestMapping("/api/sell-applications")
 @RequiredArgsConstructor
-@CrossOrigin(
-        origins = "http://localhost:3000",
-        allowedHeaders = "*",
-        methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS},
-        maxAge = 3600
-)
 public class SellVehicleApplicationController {
 
     private final SellVehicleApplicationService applicationService;
@@ -143,16 +137,27 @@ public class SellVehicleApplicationController {
     @PreAuthorize("hasRole('SHOP_OWNER')")
     public ResponseEntity<Page<SellVehicleApplicationDto>> getApplicationsByShop(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String status) {
 
         Long shopId = resolveCurrentShopIdOrNull();
         if (shopId == null) return ResponseEntity.notFound().build();
 
-        Page<SellVehicleApplicationDto> applications =
-                applicationService.getApplicationsByShop(
-                        shopId,
-                        org.springframework.data.domain.PageRequest.of(page, size)
-                );
+        Page<SellVehicleApplicationDto> applications;
+        if (status != null && !status.trim().isEmpty()) {
+            // Status-filtered query — avoids loading all applications when only
+            // a specific status (e.g. APPROVED) is needed.
+            ApplicationStatus appStatus = ApplicationStatus.valueOf(status.toUpperCase());
+            applications = applicationService.getApplicationsByShopAndStatus(
+                    shopId, appStatus,
+                    org.springframework.data.domain.PageRequest.of(page, size)
+            );
+        } else {
+            applications = applicationService.getApplicationsByShop(
+                    shopId,
+                    org.springframework.data.domain.PageRequest.of(page, size)
+            );
+        }
 
         return ResponseEntity.ok(applications);
     }

@@ -27,6 +27,16 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     @Query("SELECT l FROM LeaveRequest l JOIN FETCH l.employee e JOIN FETCH e.shop WHERE e.shop.id = :shopId AND l.deletedAt IS NULL ORDER BY l.appliedDate DESC")
     List<LeaveRequest> findByShopIdOrderByAppliedDateDesc(@Param("shopId") Long shopId);
     
+    // ── Paginated recent leaves (replaces loading ALL + take 5 in Java) ──
+
+    @Query("SELECT l FROM LeaveRequest l JOIN FETCH l.employee e JOIN FETCH e.shop WHERE e.shop.id = :shopId AND l.deletedAt IS NULL ORDER BY l.appliedDate DESC")
+    Page<LeaveRequest> findByShopIdOrderByAppliedDateDesc(@Param("shopId") Long shopId, Pageable pageable);
+
     @Query("SELECT l FROM LeaveRequest l WHERE l.employee.id = :employeeId AND l.status = :status AND l.deletedAt IS NULL")
     List<LeaveRequest> findByEmployeeIdAndStatus(@Param("employeeId") Long employeeId, @Param("status") String status);
+
+    // ── Leave summary: single GROUP BY query for status counts (replaces loading ALL leaves for KPIs) ──
+
+    @Query("SELECT l.status, COUNT(l) FROM LeaveRequest l JOIN l.employee e JOIN e.shop WHERE e.shop.id = :shopId AND l.deletedAt IS NULL GROUP BY l.status")
+    List<Object[]> countByShopIdGroupByStatus(@Param("shopId") Long shopId);
 }

@@ -16,10 +16,19 @@ public interface ShopOwnerRepository extends JpaRepository<ShopOwner, Long> {
     Optional<ShopOwner> findByEmail(String email);
 
     Optional<ShopOwner> findByPhone(String phone);
-    
+
     boolean existsByEmail(String email);
-    
+
     boolean existsByPhone(String phone);
+
+    /**
+     * Lightweight projection: returns only the approval status and
+     * password-changed flag for a shop owner, avoiding loading the full
+     * entity (which has 40+ columns) when those are the only fields needed.
+     * Used by the {@code emailExists} check in AuthService.
+     */
+    @Query("SELECT s.approvalStatus FROM ShopOwner s WHERE s.email = :email")
+    Optional<String> findApprovalStatusByEmail(@Param("email") String email);
     
     boolean existsByLicenseNumber(String licenseNumber);
     
@@ -41,4 +50,19 @@ public interface ShopOwnerRepository extends JpaRepository<ShopOwner, Long> {
 
     @Query("SELECT s FROM ShopOwner s WHERE NOT EXISTS (SELECT 1 FROM Subscription sub WHERE sub.shopOwnerId = s.id)")
     Page<ShopOwner> findUnsubscribed(Pageable pageable);
+
+    // ── Dashboard credentials: filtered + paginated queries ──
+
+    @Query("SELECT s FROM ShopOwner s WHERE " +
+           "(LOWER(s.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(CONCAT(s.firstName, ' ', s.lastName)) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(s.companyName) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+           "s.active = :active")
+    Page<ShopOwner> searchByKeywordAndActive(@Param("search") String search, @Param("active") Boolean active, Pageable pageable);
+
+    @Query("SELECT s FROM ShopOwner s WHERE " +
+           "(LOWER(s.email) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(CONCAT(s.firstName, ' ', s.lastName)) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(s.companyName) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<ShopOwner> searchByKeyword(@Param("search") String search, Pageable pageable);
 }
