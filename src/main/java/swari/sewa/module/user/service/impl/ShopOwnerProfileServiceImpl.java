@@ -53,7 +53,7 @@ public class ShopOwnerProfileServiceImpl implements ShopOwnerProfileService {
                 .findFirst()
                 .orElse(null);
 
-        if (shop == null) {
+        if (shop == null && "APPROVED".equals(shopOwner.getApprovalStatus())) {
             User user = userRepository.findByEmail(shopOwner.getEmail())
                     .orElseGet(() -> userRepository.save(User.builder()
                             .email(shopOwner.getEmail())

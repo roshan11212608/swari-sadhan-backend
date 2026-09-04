@@ -351,40 +351,62 @@ public class AdminShopOwnerServiceImpl implements AdminShopOwnerService {
         Long shopOwnerId = shopOwner.getId();
 
         // Delete all related records in FK-safe order using native SQL.
+        // Each delete is wrapped in try-catch so a missing table doesn't
+        // abort the entire deletion.
         // Order: child tables first, then parent tables.
 
         // 1. Delete records that reference vehicles (for vehicles belonging to this owner's shops)
-        executeUpdate("DELETE w FROM wishlists w INNER JOIN vehicles v ON w.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE e FROM enquiries e INNER JOIN vehicles v ON e.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE sa FROM sell_applications sa INNER JOIN vehicles v ON sa.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN vehicles v ON sva.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE vi FROM vehicle_images vi INNER JOIN vehicles v ON vi.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE w FROM wishlists w INNER JOIN vehicles v ON w.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE e FROM enquiries e INNER JOIN vehicles v ON e.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE sa FROM sell_applications sa INNER JOIN vehicles v ON sa.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN vehicles v ON sva.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE vi FROM vehicle_images vi INNER JOIN vehicles v ON vi.vehicle_id = v.id INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
         // 2. Delete vehicles
-        executeUpdate("DELETE v FROM vehicles v INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE v FROM vehicles v INNER JOIN shops s ON v.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
         // 3. Delete records that reference shops (not via vehicles)
-        executeUpdate("DELETE e FROM employees e INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE en FROM enquiries en INNER JOIN shops s ON en.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE ex FROM expenses ex INNER JOIN shops s ON ex.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
-        executeUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN shops s ON sva.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE e FROM employees e INNER JOIN shops s ON e.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE en FROM enquiries en INNER JOIN shops s ON en.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE ex FROM expenses ex INNER JOIN shops s ON ex.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE sva FROM sell_vehicle_applications sva INNER JOIN shops s ON sva.shop_id = s.id WHERE s.shop_owner_id = :id", shopOwnerId);
 
         // 4. Delete subscriptions
-        executeUpdate("DELETE FROM subscriptions WHERE shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE FROM subscriptions WHERE shop_owner_id = :id", shopOwnerId);
 
-        // 5. Delete shop owner permissions
-        executeUpdate("DELETE FROM shop_owner_permissions WHERE shop_owner_id = :id", shopOwnerId);
+        // 5. Delete shop owner permissions (table may not exist)
+        safeExecuteUpdate("DELETE FROM shop_owner_permissions WHERE shop_owner_id = :id", shopOwnerId);
 
         // 6. Delete shops
-        executeUpdate("DELETE FROM shops WHERE shop_owner_id = :id", shopOwnerId);
+        safeExecuteUpdate("DELETE FROM shops WHERE shop_owner_id = :id", shopOwnerId);
 
         // 7. Delete the mirrored user row
-        executeUpdate("DELETE FROM users WHERE email = :email", shopOwner.getEmail());
+        safeExecuteUpdate("DELETE FROM users WHERE email = :email", shopOwner.getEmail());
 
         // 8. Delete the shop owner
         shopOwnerRepository.delete(shopOwner);
 
         log.info("Deleted shop owner {} ({}) and all related records", shopOwnerId, shopOwner.getEmail());
+    }
+
+    private void safeExecuteUpdate(String sql, Long id) {
+        try {
+            Query query = entityManager.createNativeQuery(sql);
+            query.setParameter("id", id);
+            query.executeUpdate();
+        } catch (Exception e) {
+            log.warn("Skipping delete (table may not exist): {} — {}", sql.substring(0, Math.min(60, sql.length())), e.getMessage());
+        }
+    }
+
+    private void safeExecuteUpdate(String sql, String email) {
+        try {
+            Query query = entityManager.createNativeQuery(sql);
+            query.setParameter("email", email);
+            query.executeUpdate();
+        } catch (Exception e) {
+            log.warn("Skipping delete (table may not exist): {} — {}", sql.substring(0, Math.min(60, sql.length())), e.getMessage());
+        }
     }
 
     private void executeUpdate(String sql, Long id) {
