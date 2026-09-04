@@ -10,6 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -72,16 +74,51 @@ public class EmailService {
     private String senderEmail;
 
     /**
-     * Dev-only startup summary of the mail configuration. Logs the key's
-     * <em>prefix</em> and length only - never the secret itself - so a stale
-     * key, a REST key pasted where an SMTP key belongs, or stray whitespace
-     * from copy-paste can be spotted without a send attempt.
+     * Startup summary of the mail/Brevo configuration. In dev, logs SMTP
+     * details; in prod, logs only the Brevo API key <em>prefix</em> and length
+     * so a stale key, a wrong key type, or stray whitespace from copy-paste
+     * can be spotted without a send attempt. Never logs the secret itself.
      */
     @PostConstruct
     void logMailConfigOnStartup() {
-        if (!isDevProfile()) {
+        if (isDevProfile()) {
+            logDevMailConfig();
             return;
         }
+        // Prod: log a sanitized summary so we can diagnose 401s without
+        // exposing secrets.
+        boolean smtpConfigured = isMailConfigured();
+        boolean brevoApiConfigured = isBrevoEmailConfigured();
+        log.info("Email config: SMTP={} BrevoAPI={} senderEmail='{}'",
+                smtpConfigured, brevoApiConfigured,
+                (senderEmail == null || senderEmail.isBlank()) ? "(not set)" : senderEmail);
+        if (!smtpConfigured && !brevoApiConfigured) {
+            log.error("No email delivery method configured! Set BREVO_SMTP_USERNAME + "
+                    + "BREVO_SMTP_KEY (preferred) or BREVO_API_KEY + BREVO_SENDER_EMAIL.");
+            return;
+        }
+        if (brevoApiConfigured) {
+            String apiKey = brevoConfig.getApiKey();
+            String keyPrefix = apiKey.contains("-")
+                    ? apiKey.substring(0, apiKey.indexOf('-') + 1)
+                    : "(no '-' in key)";
+            log.info("Brevo API key loaded: prefix={} length={} (key type: {})",
+                    keyPrefix, apiKey.length(),
+                    apiKey.startsWith("xkeysib-") ? "REST API key"
+                            : apiKey.startsWith("xsmtpsib-") ? "SMTP key (WARNING: wrong type for REST API)"
+                            : "unknown");
+            if (!apiKey.equals(apiKey.trim())) {
+                log.error("BREVO_API_KEY has leading/trailing whitespace — this breaks REST API auth.");
+            }
+        }
+        if (smtpConfigured && mailHost.contains("brevo") && mailPassword.startsWith("xkeysib-")) {
+            log.warn("spring.mail.password looks like a Brevo REST API key (xkeysib-). "
+                    + "SMTP AUTH needs the SMTP key (xsmtpsib-) from Brevo > SMTP & API > SMTP.");
+        }
+    }
+
+    /** Dev-only detailed mail config log. */
+    private void logDevMailConfig() {
         if (!isMailConfigured()) {
             log.warn("Mail credentials are not configured; email OTPs will only be logged.");
             return;
@@ -283,13 +320,36 @@ public class EmailService {
                 log.info("Email sent via Brevo to {} with subject '{}'", to, subject);
                 return true;
             }
-            log.error("Brevo email API returned status {} for recipient {}",
-                    response.getStatusCode(), to);
+            log.error("Brevo email API returned status {} body='{}' for recipient {}",
+                    response.getStatusCode(), safeResponseBody(response.getBody()), to);
+            return false;
+        } catch (HttpClientErrorException e) {
+            // 4xx — Brevo rejects the request (invalid key, unverified sender, etc.)
+            // The response body identifies the exact cause. No secrets are in the body.
+            log.error("Brevo email API client error for {}: status={} body='{}'",
+                    to, e.getStatusCode(), safeResponseBody(e.getResponseBodyAsString()));
+            return false;
+        } catch (HttpServerErrorException e) {
+            // 5xx — Brevo server-side issue
+            log.error("Brevo email API server error for {}: status={} body='{}'",
+                    to, e.getStatusCode(), safeResponseBody(e.getResponseBodyAsString()));
             return false;
         } catch (RestClientException e) {
             log.error("Failed to send email via Brevo to {}: {}", to, e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Truncate and sanitize a Brevo response body for logging. Brevo error
+     * bodies are JSON like {@code {"code":"invalid_key","message":"..."}} and
+     * never contain the API key itself, but we cap the length to avoid log
+     * spam.
+     */
+    private static String safeResponseBody(String body) {
+        if (body == null || body.isBlank()) return "[no body]";
+        String trimmed = body.trim();
+        return trimmed.length() > 500 ? trimmed.substring(0, 500) + "..." : trimmed;
     }
 
     /** Log the message body so dev flows remain testable. Never used in prod. */
