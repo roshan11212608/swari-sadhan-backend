@@ -50,7 +50,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
     @Override
     public String sendOtps(ShopRegSendOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase();
-        String mobile = null;
+        String mobile = "";
         if (request.getMobileNumber() != null && !request.getMobileNumber().trim().isEmpty()) {
             try {
                 mobile = normalizeMobile(request.getMobileNumber());
@@ -79,7 +79,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
         }
 
         // Same status-aware check for the mobile number (only if provided).
-        if (mobile != null) {
+        if (!mobile.isEmpty()) {
             Optional<ShopOwner> existingByPhone = shopOwnerRepository.findByPhone(mobile);
             if (existingByPhone.isPresent()) {
                 String status = existingByPhone.get().getApprovalStatus();
@@ -96,7 +96,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
         }
 
         // Rate limiting: check last sent time
-        if (mobile != null) {
+        if (!mobile.isEmpty()) {
             shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
                     .ifPresent(existing -> {
                         if (existing.getLastSentAt() != null
@@ -157,7 +157,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
     @Override
     public ShopRegVerifyOtpResponse verifyOtps(ShopRegVerifyOtpRequest request) {
         String email = request.getEmail().trim().toLowerCase();
-        String mobile = null;
+        String mobile = "";
         if (request.getMobileNumber() != null && !request.getMobileNumber().trim().isEmpty()) {
             try {
                 mobile = normalizeMobile(request.getMobileNumber());
@@ -167,7 +167,7 @@ public class ShopRegistrationServiceImpl implements ShopRegistrationService {
             }
         }
 
-        ShopRegOtp record = (mobile != null
+        ShopRegOtp record = (!mobile.isEmpty()
                 ? shopRegOtpRepository.findLatestByEmailAndMobile(email, mobile)
                 : shopRegOtpRepository.findLatestByEmail(email))
                 .orElseThrow(() -> new IllegalArgumentException(
