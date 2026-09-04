@@ -190,8 +190,6 @@ public class ShopServiceImpl implements ShopService {
         Shop shop = modelMapper.map(shopDto, Shop.class);
         shop.setShopOwner(shopOwner);
         shop.setStatus(ShopStatus.PENDING_APPROVAL);
-
-        // display_order is NOT NULL in DB — ensure it's never null
         if (shop.getDisplayOrder() == null) {
             shop.setDisplayOrder(0);
         }
@@ -427,7 +425,6 @@ public class ShopServiceImpl implements ShopService {
         }
 
         modelMapper.map(shopDto, shop);
-        // display_order is NOT NULL in DB — preserve existing value if DTO sends null
         if (shop.getDisplayOrder() == null) {
             shop.setDisplayOrder(0);
         }

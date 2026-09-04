@@ -51,20 +51,12 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseAttachmentRepository expenseAttachmentRepository;
     private final ModelMapper modelMapper;
 
-    /** Resolve shop by user email, falling back to shop owner email.
-     *  Handles race conditions where the shop was auto-created by the profile
-     *  endpoint but the user link may not be set yet. */
-    private Shop resolveShop(String userEmail) {
-        return shopRepository.findByUserEmail(userEmail)
-                .or(() -> shopRepository.findByShopOwnerEmail(userEmail))
-                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
-    }
-
     @Override
     @Transactional
     @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public ExpenseResponse createExpense(ExpenseRequest expenseRequest, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         // Business validation
         validateExpenseRequest(expenseRequest);
@@ -104,7 +96,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public Optional<ExpenseResponse> getExpenseById(Long id, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         return expenseRepository.findByIdWithAttachments(id)
                 .filter(expense -> expense.getShop().getId().equals(shop.getId()) && expense.getIsActive())
@@ -114,7 +107,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public Optional<ExpenseResponse> getExpenseByNumber(String expenseNumber, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         return expenseRepository.findByExpenseNumber(expenseNumber)
                 .filter(expense -> expense.getShop().getId().equals(shop.getId()) && expense.getIsActive())
@@ -124,7 +118,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public Page<ExpenseResponse> getExpensesByShop(Long shopId, Pageable pageable, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -137,7 +132,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public Page<ExpenseResponse> searchExpenses(Long shopId, String searchTerm, Pageable pageable, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -152,7 +148,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     public Page<ExpenseResponse> filterExpenses(Long shopId, String title, Long categoryId, String paymentStatus,
                                                 String paymentMethod, LocalDate startDate, LocalDate endDate,
                                                 BigDecimal minAmount, BigDecimal maxAmount, Pageable pageable, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -167,7 +164,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public ExpenseResponse updateExpense(Long id, ExpenseRequest expenseRequest, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         // Business validation
         validateExpenseRequest(expenseRequest);
@@ -196,7 +194,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @CacheEvict(value = {"financeDashboard", "financeIncome", "financeExpenses", "financeProfit", "financeCashFlow", "financeOutstanding", "vehicleInvestment", "paymentSummary", "analyticsDashboard", "analyticsStock", "analyticsPeriod", "analyticsProfitability", "analyticsAverage", "analyticsInventory"}, allEntries = true)
     public void deleteExpense(Long id, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         Expense expense = expenseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found with id: " + id));
@@ -214,7 +213,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public List<ExpenseResponse> getRecentExpenses(Long shopId, int limit, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -228,7 +228,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public List<ExpenseResponse> getUpcomingPayments(Long shopId, int limit, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -242,7 +243,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public BigDecimal getTodayExpenses(Long shopId, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -254,7 +256,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public BigDecimal getPendingPayments(Long shopId, String userEmail) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         if (!shop.getId().equals(shopId)) {
             throw new ResourceNotFoundException("Shop not found or access denied");
@@ -309,7 +312,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional(readOnly = true)
     public ExpenseDashboardResponse getDashboardSummary(String userEmail, String period, LocalDate startDate, LocalDate endDate, Integer trendMonths) {
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         Long shopId = shop.getId();
 
@@ -473,7 +477,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.info("File Type: {}", fileType);
         log.info("User Email: {}", userEmail);
         
-        Shop shop = resolveShop(userEmail);
+        Shop shop = shopRepository.findByUserEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("Shop not found for user: " + userEmail));
 
         log.info("Shop ID: {}", shop.getId());
 

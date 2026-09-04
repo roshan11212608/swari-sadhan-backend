@@ -21,13 +21,6 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
     private final ShopRepository shopRepository;
 
-    /** Resolve shop ID by user email, falling back to shop owner email. */
-    private Long resolveShopId(String userEmail) {
-        return shopRepository.findShopIdByUserEmail(userEmail)
-                .or(() -> shopRepository.findShopIdByShopOwnerEmail(userEmail))
-                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
-    }
-
     @GetMapping("/dashboard")
     @PreAuthorize("hasRole('SHOP_OWNER')")
     @Cacheable(value = "analyticsDashboard", key = "#authentication.name + '_' + #filter", unless = "#result == null")
@@ -35,9 +28,10 @@ public class AnalyticsController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-
-        // Derive shop from authenticated user (with fallback)
-        Long shopId = resolveShopId(userEmail);
+        
+        // Derive shop from authenticated user
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
         
         System.out.println("=== ANALYTICS DASHBOARD CALLED ===");
         System.out.println("User: " + userEmail);

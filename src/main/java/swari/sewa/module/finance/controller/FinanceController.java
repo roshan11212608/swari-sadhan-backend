@@ -21,16 +21,6 @@ public class FinanceController {
     private final FinanceService financeService;
     private final ShopRepository shopRepository;
 
-    /** Resolve shop ID by user email, falling back to shop owner email.
-     *  This handles the race condition where the shop was auto-created by the
-     *  profile endpoint but the user link may not be set yet, as well as shops
-     *  that were created without a user link. */
-    private Long resolveShopId(String userEmail) {
-        return shopRepository.findShopIdByUserEmail(userEmail)
-                .or(() -> shopRepository.findShopIdByShopOwnerEmail(userEmail))
-                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
-    }
-
     @GetMapping("/dashboard")
     @PreAuthorize("hasRole('SHOP_OWNER')")
     @Cacheable(value = "financeDashboard", key = "#authentication.name + '_' + #filter", unless = "#result == null")
@@ -38,8 +28,9 @@ public class FinanceController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         FinancialDashboardResponse dashboard = financeService.getFinancialDashboard(shopId, filter);
         return ResponseEntity.ok(ApiResponse.success(dashboard, "Financial dashboard loaded successfully"));
     }
@@ -51,8 +42,9 @@ public class FinanceController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         IncomeResponse income = financeService.getIncome(shopId, filter);
         return ResponseEntity.ok(ApiResponse.success(income, "Income data loaded successfully"));
     }
@@ -64,8 +56,9 @@ public class FinanceController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         FinanceExpensesResponse expenses = financeService.getFinanceExpenses(shopId, filter);
         return ResponseEntity.ok(ApiResponse.success(expenses, "Expenses data loaded successfully"));
     }
@@ -77,8 +70,9 @@ public class FinanceController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         ProfitResponse profit = financeService.getProfit(shopId, filter);
         return ResponseEntity.ok(ApiResponse.success(profit, "Profit data loaded successfully"));
     }
@@ -90,8 +84,9 @@ public class FinanceController {
             @RequestParam String filter,
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         CashFlowResponse cashFlow = financeService.getCashFlow(shopId, filter);
         return ResponseEntity.ok(ApiResponse.success(cashFlow, "Cash flow data loaded successfully"));
     }
@@ -102,8 +97,9 @@ public class FinanceController {
     public ResponseEntity<ApiResponse<OutstandingResponse>> getOutstanding(
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         OutstandingResponse outstanding = financeService.getOutstanding(shopId);
         return ResponseEntity.ok(ApiResponse.success(outstanding, "Outstanding data loaded successfully"));
     }
@@ -114,8 +110,9 @@ public class FinanceController {
     public ResponseEntity<ApiResponse<VehicleInvestmentResponse>> getVehicleInvestment(
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         VehicleInvestmentResponse investment = financeService.getVehicleInvestment(shopId);
         return ResponseEntity.ok(ApiResponse.success(investment, "Vehicle investment data loaded successfully"));
     }
@@ -126,8 +123,9 @@ public class FinanceController {
     public ResponseEntity<ApiResponse<PaymentSummaryResponse>> getPaymentSummary(
             Authentication authentication) {
         String userEmail = authentication.getName();
-        Long shopId = resolveShopId(userEmail);
-
+        Long shopId = shopRepository.findShopIdByUserEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("Shop not found for user: " + userEmail));
+        
         PaymentSummaryResponse paymentSummary = financeService.getPaymentSummary(shopId);
         return ResponseEntity.ok(ApiResponse.success(paymentSummary, "Payment summary data loaded successfully"));
     }

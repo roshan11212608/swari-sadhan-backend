@@ -141,7 +141,6 @@ public class DataInitializer implements CommandLineRunner {
                         .emailAddress("demo@shop.com")
                         .status(ShopStatus.ACTIVE)
                         .isFeatured(false)
-                        .displayOrder(0)
                         .shopOwner(shopOwner)
                         .user(shopOwnerUser)
                         .build();

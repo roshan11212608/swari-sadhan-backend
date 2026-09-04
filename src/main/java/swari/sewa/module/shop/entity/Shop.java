@@ -86,12 +86,15 @@ public class Shop {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    @Builder.Default
     private ShopStatus status = ShopStatus.PENDING_APPROVAL;
 
     @Column(name = "is_featured")
+    @Builder.Default
     private Boolean isFeatured = false;
 
     @Column(name = "display_order")
+    @Builder.Default
     private Integer displayOrder = 0;
 
     @Column(name = "subscription_plan")
@@ -101,9 +104,11 @@ public class Shop {
     private LocalDateTime subscriptionExpiry;
 
     @Column(name = "created_at", nullable = false, updatable = false)
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "updated_at")
+    @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 
     @ManyToOne(fetch = FetchType.LAZY)
